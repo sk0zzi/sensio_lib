@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 name = "sensio-lib"
 version = "0.1.0"
 description = ""
-authors = [{ name = "MariusLindberg", email = "Marius.Lindberg@gmail.com" }]
 requires-python = "~=3.10"
 readme = "README.md"
 dependencies = [
