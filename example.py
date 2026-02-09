@@ -1,57 +1,73 @@
-from sensio_lib import Light
-from sensio_lib.light_state import LightState
-from sensio_lib.hub import Hub
-import logging
+"""Async example for controlling Sensio smart house devices."""
 
-# Configure the root logger
+import asyncio
+import logging
+import os
+
+from sensio_lib import Hub, SensioAuthenticationError, SensioConnectionError
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-def main():
-    logger.info("Starting Sensio integration")
 
-    # Configure the system. Replace the IP address with the IP address of your Sensio hub on your LAN. 
-    # Replace SENSIO_USERNAME and SENSIO_PASSWORD with your Sensio credentials (same username and password you use to log in to the Sensio app)
-    hub_adress = '192.168.xx.xx'
-    username = 'SENSIO_USERNAME'
-    password = 'SENSIO_PASSWORD'
-    hub = Hub(hub_adress, username, password)
+async def main():
+    # Set these environment variables before running:
+    #   export SENSIO_USERNAME="your_username"
+    #   export SENSIO_PASSWORD="your_password"
+    #   export SENSIO_HUB_IP="192.168.x.x"
+    hub_address = os.environ["SENSIO_HUB_IP"]
+    username = os.environ["SENSIO_USERNAME"]
+    password = os.environ["SENSIO_PASSWORD"]
 
-    # Login to Sensio cloud
-    hub.login()
+    try:
+        async with Hub(hub_address, username, password) as hub:
+            # Authenticate with Sensio cloud
+            projects = await hub.login()
+            logger.info("Available projects: %s", list(projects.keys()))
 
-    # Retrieve all projects
-    if not hub.projects or len(hub.projects) == 0:
-        logger.error("No projects found")
-        return
-    else:
-        logger.info(hub.projects)
+            if not projects:
+                logger.error("No projects found")
+                return
 
-    # Set the first project as the active project. Note: If you have multiple projects, you can select the project you want to control instead by using hub.projects['my_project_name']. 
-    # All available projects should be listed by the log command above when the script is run
-    project = hub.projects.popitem()[1]
+            # Select the first project
+            project_name, project_id = next(iter(projects.items()))
+            logger.info("Using project: %s", project_name)
+            await hub.set_project(project_id)
 
-    # By setting the project in the hub the hub will add all lights to the hub.lights list
-    hub.set_project(project)
+            # List all lights
+            lights = hub.get_lights()
+            for i, light in enumerate(lights):
+                logger.info("Light %d: %s", i, light)
 
-    [logger.info(f'Light {i}: {light}') for i, light in enumerate(hub.lights)]
-    while True:
-        light = input("Enter light number: ")
-        if light.isdigit():
-            light = int(light)
-            if light < len(hub.lights):
-                if hub.lights[light].get_light_state() == LightState.ON or hub.lights[light].get_light_state() == LightState.UNKNOWN:
-                    logger.info(f'Light state is {hub.lights[light].get_light_state()}, turning off')
-                    hub.lights[light].turn_off()
+            # List all scenes
+            scenes = hub.get_scenes()
+            for i, scene in enumerate(scenes):
+                logger.info("Scene %d: %s", i, scene)
+
+            # Interactive light toggle
+            while True:
+                choice = input("Enter light number to toggle (or 'q' to quit): ")
+                if choice.lower() == "q":
+                    break
+                if choice.isdigit() and int(choice) < len(lights):
+                    light = lights[int(choice)]
+                    if light.is_on:
+                        logger.info("Turning off: %s", light.name)
+                        await light.turn_off()
+                    else:
+                        logger.info("Turning on: %s", light.name)
+                        await light.turn_on()
                 else:
-                    logger.info(f'Light state is {hub.lights[light].get_light_state()}, turning on')
-                    hub.lights[light].turn_on()
-            else:
-                logger.error('Invalid light number to toggle')
+                    logger.error("Invalid selection")
+
+    except SensioAuthenticationError as err:
+        logger.error("Authentication failed: %s", err)
+    except SensioConnectionError as err:
+        logger.error("Connection error: %s", err)
+
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

@@ -1,17 +1,45 @@
 # Sensio Library
 
-A small library designed to control the Sensio smart house controller. This library was developed by reverse engineering the communication between the Sensio smart home app and the controller. It retrieves all device information from the Sensio cloud, but after the initial setup, all devices can be controlled 100% locally from your LAN.
+A minimal async library to control Sensio smart house systems. Designed for easy integration with Home Assistant.
 
-More features could probably be implemented by additional reverse engineering.
+This library was developed by reverse engineering the communication between the Sensio app and the controller. It retrieves device configuration from the Sensio cloud on initial setup, then controls devices 100% locally over your LAN.
 
-## Features (v0.1.0)
+## Features (v1.5.0)
 
-- **Login to Sensio Cloud**
-  - Select between multiple projects
-  - Get a list of all light devices
-- **Basic Light Control**
-  - Turn lights on/off (Note: no actual state of lights is implemented)
+- **Async/await** — Built for Home Assistant and asyncio applications
+- **Cloud authentication** — Login to Sensio cloud to discover devices
+- **Local control** — All device commands sent directly to your controller on the LAN
+- **Lights** — Turn individual lights and room-level lights on/off
+- **Scenes** — Activate lighting scenes
+
+## Quick Start
+
+```python
+import asyncio
+from sensio_lib import Hub
+
+async def main():
+    async with Hub("192.168.1.100", "username", "password") as hub:
+        # Authenticate and discover devices
+        projects = await hub.login()
+        await hub.set_project(projects["My Home"])
+
+        # Control lights
+        lights = hub.get_lights()
+        await lights[0].turn_on()
+
+        # Activate scenes
+        scenes = hub.get_scenes()
+        await scenes[0].activate()
+
+asyncio.run(main())
+```
 
 ## Device Support
 
 This library has been tested with a Sensio X1 controller. Testing is limited, so your experience may vary.
+
+## Requirements
+
+- Python 3.10+
+- `aiohttp`

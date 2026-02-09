@@ -1,32 +1,58 @@
-from sensio_lib.light_state import LightState
+"""Light device for Sensio on/off control."""
+
+from enum import Enum
+
+from sensio_lib.device import Device
 from sensio_lib.socket_manager import SocketManager
-import uuid
-import logging
 
-logger = logging.getLogger(__name__)
 
-class Light:
-    def __init__(self, name, on_address, off_address, server_address=None):
-        self.state = LightState.UNKNOWN
-        self.id = uuid.uuid4()
-        self.name = name
-        self.on_address = on_address
-        self.off_address = off_address
-        self.server_address = server_address
-        self.socket_manager = SocketManager(self.server_address)
+class LightState(Enum):
+    """Possible states for a light."""
 
-    def turn_on(self):
-        logger.debug(f"Turning on light with ID: {self.name}")
-        self.socket_manager.send_command(f'new_state {self.on_address} 0')
-        self.state = LightState.ON
+    ON = "on"
+    OFF = "off"
+    UNKNOWN = "unknown"
 
-    def turn_off(self):
-        logger.debug(f"Turning off light with ID: {self.name}")
-        self.socket_manager.send_command(f'new_state {self.off_address} 0')
-        self.state = LightState.OFF
 
-    def update(self):
-        logger.debug('Not implemented')
+class Light(Device):
+    """Represents a Sensio light with on/off control.
 
-    def __repr__(self):
-        return f'LightEntity: {self.name} - {self.state}'
+    State is tracked optimistically (assumed to succeed after command).
+    """
+
+    def __init__(
+        self,
+        unique_id: str,
+        name: str,
+        zone_id: str,
+        on_address: int,
+        off_address: int,
+        socket_manager: SocketManager,
+    ) -> None:
+        super().__init__(unique_id, name, zone_id, socket_manager)
+        self._on_address = on_address
+        self._off_address = off_address
+        self._state = LightState.UNKNOWN
+
+    @property
+    def state(self) -> LightState:
+        """Return the current optimistic state of the light."""
+        return self._state
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if the light is considered on."""
+        return self._state == LightState.ON
+
+    async def turn_on(self) -> None:
+        """Turn the light on."""
+        await self._socket_manager.send_command(f"new_state {self._on_address} 0")
+        self._state = LightState.ON
+
+    async def turn_off(self) -> None:
+        """Turn the light off."""
+        await self._socket_manager.send_command(f"new_state {self._off_address} 0")
+        self._state = LightState.OFF
+
+    def __repr__(self) -> str:
+        return f"Light(name={self._name!r}, state={self._state.value})"

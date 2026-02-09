@@ -4,11 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sensio-lib"
-version = "0.1.0"
-description = ""
-requires-python = "~=3.10"
+version = "1.5.0"
+description = "A library to control Sensio smart house systems"
+requires-python = ">=3.10"
 readme = "README.md"
 dependencies = [
-    "requests>=2.32.3,<3",
-    "pytest>=8.3.3,<9",
+    "aiohttp>=3.9,<4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<9",
+    "pytest-asyncio>=0.24,<1",
+    "aioresponses>=0.7,<1",
 ]

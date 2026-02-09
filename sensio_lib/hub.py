@@ -1,85 +1,202 @@
-from sensio_lib.const import SENSIO_AGENT_REQUEST, SENSIO_TOKEN_URL, SENSIO_PROJECTS_URL, SENSIO_BASE_URL
-from sensio_lib.light import Light
-import requests
-import logging
-import base64
+"""Hub orchestrator for the Sensio smart house system."""
 
-logger = logging.getLogger(__name__)
+from __future__ import annotations
+
+from sensio_lib.api_client import SensioApiClient
+from sensio_lib.light import Light
+from sensio_lib.scene import Scene
+from sensio_lib.socket_manager import SocketManager
+
 
 class Hub:
-    def __init__(self, server_address: str, username: str, password: str):
-        self.username = username
-        self.password = password
-        self.server_address = server_address      
+    """Main entry point for controlling a Sensio smart house system.
 
-    def login(self) -> list:
-        ''' Authenticate with the Sensio API and retrieve a list of projects '''
+    Handles cloud API authentication, device discovery, and local control.
+    """
 
-        self.token = self._get_auth_token()
-        return self._get_projects()
-    
-    def get_lights(self, project_id) -> list:
-        ''' Retrieve a list of lights for the specified project '''
+    def __init__(self, server_address: str, username: str, password: str) -> None:
+        self._api_client = SensioApiClient(username, password)
+        self._socket_manager = SocketManager(server_address)
+        self._lights: list[Light] = []
+        self._scenes: list[Scene] = []
+        self._projects: dict[str, str] = {}
 
-        entities_url = f'{SENSIO_BASE_URL}/projects/{project_id}/functions'
-        entities_response = requests.get(entities_url, headers={'Authorization': f'Token {self.token}'})
-        if entities_response.status_code != 200:
-            raise Exception("Failed to retrieve entities")
-        
-        logger.debug(entities_response.json())
-        
-        switches = self._create_function_list(entities_response.json())
-        return [Light(switch['switch']['name'], switch['switch']['command_on'], switch['switch']['command_off'], self.server_address) for switch in switches]
-        
-        
-    def _get_auth_token(self):
-        response = requests.post(SENSIO_TOKEN_URL, auth=(self.username, self.password), json=SENSIO_AGENT_REQUEST, headers={"Content-Type": "application/json"})
-        if response.status_code != 200:
-            raise Exception("Failed to retrieve token")
-        
-        token_str = f'{response.json()["tokenId"]}:{response.json()["tokenSecret"]}'
-        token_bytes = token_str.encode('utf-8')
-        return base64.b64encode(token_bytes).decode('utf-8')
-        
-    def _get_projects(self):
-        if not self.token:
-            raise Exception("Token not set")
+    async def login(self) -> dict[str, str]:
+        """Authenticate with the Sensio cloud and return available projects.
 
-        # Get a list of projects
-        project_response = requests.get(SENSIO_PROJECTS_URL, headers={'Authorization': f'Token {self.token}'})
-        if project_response.status_code != 200:
-            raise Exception("Failed to retrieve projects")
-        
-        # We want to populate projects with the project ID and project name for each project
-        return {project['name']: project['projectId'] for project in project_response.json()['projects']}
-    
-    
-    def _create_function_list(self, entity_json) -> list:
-        ''' Create a list of functions from the entity data. This is.....ugly.'''
-        
-        switch_info = []
-        intermediate_switches = {}
+        Returns:
+            Dictionary of {project_name: project_id}.
+        """
+        await self._api_client.authenticate()
+        self._projects = await self._api_client.get_projects()
+        return self._projects
 
-        for switch in entity_json['functions']:
-            name = switch['name']
-            sub_type = switch['subType']
-            # Strip postfix to get the base name
-            base_name = name.rsplit('_', 1)[0]
-            # Determine command based on postfix
-            if sub_type in ['light_on', 'light_off', 'LightOffRoom', 'LightOnRoom']:
-                if base_name not in intermediate_switches:
-                    intermediate_switches[base_name] = {
-                        'name': base_name,
-                        'command_on': '',
-                        'command_off': ''
-                    }
+    async def set_project(self, project_id: str) -> None:
+        """Set the active project and discover devices.
 
-                if name.endswith('_OFF'):
-                    intermediate_switches[base_name]['command_off'] = switch["address"]
-                elif name.endswith('_ON'):
-                    intermediate_switches[base_name]['command_on'] = switch["address"]
+        Fetches device configuration from the cloud API and establishes
+        the local socket connection to the controller.
+        """
+        functions_data = await self._api_client.get_functions(project_id)
+        self._parse_devices(functions_data)
 
-                if intermediate_switches[base_name]['command_on'] and intermediate_switches[base_name]['command_off']:
-                    switch_info.append({'switch': intermediate_switches.pop(base_name)})
-        
-        return switch_info
+        # Close API client — no longer needed after device discovery
+        await self._api_client.close()
+
+        # Connect to the local controller
+        await self._socket_manager.connect()
+
+    def get_lights(self) -> list[Light]:
+        """Return all discovered lights."""
+        return list(self._lights)
+
+    def get_scenes(self) -> list[Scene]:
+        """Return all discovered scenes."""
+        return list(self._scenes)
+
+    def _parse_devices(self, functions_data: dict) -> None:
+        """Parse the functions JSON into Light and Scene objects."""
+        functions = functions_data.get("functions", [])
+
+        self._lights = self._parse_lights(functions)
+        self._scenes = self._parse_scenes(functions)
+
+    def _parse_lights(self, functions: list[dict]) -> list[Light]:
+        """Parse individual lights and room-level light controls."""
+        lights: list[Light] = []
+
+        # --- Individual lights (subGroupId > 0) ---
+        # Group by subGroupId to pair on/off addresses.
+        groups: dict[int, dict] = {}
+        for func in functions:
+            sub_type = func["subType"]
+            sub_group_id = func["subGroupId"]
+
+            if sub_type not in ("light_on", "light_off") or sub_group_id == 0:
+                continue
+
+            if sub_group_id not in groups:
+                groups[sub_group_id] = {
+                    "name": func["displayName"],
+                    "zone_id": func["zoneId"],
+                    "on_address": None,
+                    "off_address": None,
+                }
+
+            if sub_type == "light_on":
+                groups[sub_group_id]["on_address"] = func["address"]
+            elif sub_type == "light_off":
+                groups[sub_group_id]["off_address"] = func["address"]
+
+        for sub_group_id, info in groups.items():
+            if info["on_address"] is not None and info["off_address"] is not None:
+                lights.append(
+                    Light(
+                        unique_id=str(sub_group_id),
+                        name=info["name"],
+                        zone_id=info["zone_id"],
+                        on_address=info["on_address"],
+                        off_address=info["off_address"],
+                        socket_manager=self._socket_manager,
+                    )
+                )
+
+        # --- Room-level lights (LightOnRoom / LightOffRoom, subGroupId == 0) ---
+        # Group by zoneId to pair on/off.
+        room_groups: dict[str, dict] = {}
+        for func in functions:
+            sub_type = func["subType"]
+            if sub_type not in ("LightOnRoom", "LightOffRoom"):
+                continue
+
+            zone_id = func["zoneId"]
+            if zone_id not in room_groups:
+                # Derive a friendly name from the internal name field
+                # e.g. "B_LightStue_ON" -> "Stue"
+                room_name = self._extract_room_name(func["name"])
+                room_groups[zone_id] = {
+                    "name": f"{room_name} All Lights",
+                    "zone_id": zone_id,
+                    "on_address": None,
+                    "off_address": None,
+                }
+
+            if sub_type == "LightOnRoom":
+                room_groups[zone_id]["on_address"] = func["address"]
+            elif sub_type == "LightOffRoom":
+                room_groups[zone_id]["off_address"] = func["address"]
+
+        for zone_id, info in room_groups.items():
+            if info["on_address"] is not None and info["off_address"] is not None:
+                lights.append(
+                    Light(
+                        unique_id=f"{zone_id}_room",
+                        name=info["name"],
+                        zone_id=info["zone_id"],
+                        on_address=info["on_address"],
+                        off_address=info["off_address"],
+                        socket_manager=self._socket_manager,
+                    )
+                )
+
+        return lights
+
+    def _parse_scenes(self, functions: list[dict]) -> list[Scene]:
+        """Parse scene functions into Scene objects."""
+        scene_sub_types = {"LigthSc1Room", "LigthSc2Room", "LigthSc3Room", "LigthSc4Room"}
+        scenes: list[Scene] = []
+
+        for func in functions:
+            if func["subType"] not in scene_sub_types:
+                continue
+
+            zone_id = func["zoneId"]
+            address = func["address"]
+
+            # Derive a useful name from the internal name
+            # e.g. "B_LightStue_Sc1" -> "Stue Scene 1"
+            room_name = self._extract_room_name(func["name"])
+            scene_number = func["subType"].replace("LigthSc", "").replace("Room", "")
+            display_name = f"{room_name} Scene {scene_number}"
+
+            scenes.append(
+                Scene(
+                    unique_id=f"{zone_id}_{address}",
+                    name=display_name,
+                    zone_id=zone_id,
+                    address=address,
+                    socket_manager=self._socket_manager,
+                )
+            )
+
+        return scenes
+
+    @staticmethod
+    def _extract_room_name(internal_name: str) -> str:
+        """Extract a room name from the Sensio internal naming convention.
+
+        Examples:
+            "B_LightStue_ON"    -> "Stue"
+            "B_LightKontor_OFF" -> "Kontor"
+            "B_LightStue_Sc1"   -> "Stue"
+        """
+        parts = internal_name.split("_")
+        # Typically: B_Light<Room>_<Suffix> or B_Light<Room>_<Suffix>
+        for part in parts:
+            if part.startswith("Light") and len(part) > 5:
+                return part[5:]  # Strip "Light" prefix
+        # Fallback: return the middle part
+        if len(parts) >= 3:
+            return parts[1]
+        return internal_name
+
+    async def close(self) -> None:
+        """Close all connections and clean up resources."""
+        await self._api_client.close()
+        await self._socket_manager.close()
+
+    async def __aenter__(self) -> Hub:
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
