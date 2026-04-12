@@ -4,7 +4,7 @@ A minimal async library to control Sensio (EOPT Home) smart house systems. Desig
 
 It retrieves device configuration from the EOPT cloud on initial setup, then controls devices 100% locally over your LAN.
 
-## Features (v1.1.0)
+## Features (v1.0.0)
 
 - **Local control** — All device commands sent directly to your controller on the LAN
 - **Lights** — Turn individual lights and room-level lights on/off
