@@ -10,6 +10,7 @@ from sensio_lib.exceptions import (
 from sensio_lib.hub import Hub
 from sensio_lib.light import Light, LightState
 from sensio_lib.scene import Scene
+from sensio_lib.sensio_api import SensioApi
 
 __all__ = [
     "Device",
@@ -17,6 +18,7 @@ __all__ = [
     "Light",
     "LightState",
     "Scene",
+    "SensioApi",
     "SensioAuthenticationError",
     "SensioCommandError",
     "SensioConnectionError",

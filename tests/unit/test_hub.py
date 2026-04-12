@@ -22,7 +22,7 @@ def sample_functions():
 @pytest.fixture
 def hub():
     """Create a Hub instance without connecting."""
-    return Hub("192.168.1.1", "user", "pass")
+    return Hub("192.168.1.1")
 
 
 class TestDeviceParsing:
@@ -142,32 +142,29 @@ class TestExtractRoomName:
 
 
 class TestHubLifecycle:
-    """Tests for login, set_project, and close."""
+    """Tests for connect and close."""
 
     @pytest.mark.asyncio
-    async def test_login_returns_projects(self, hub):
-        """Login should authenticate and return projects."""
-        with patch.object(hub._api_client, "authenticate", new_callable=AsyncMock) as mock_auth, \
-             patch.object(hub._api_client, "get_projects", new_callable=AsyncMock, return_value={"Home": "p1"}) as mock_proj:
-            result = await hub.login()
+    async def test_connect_parses_and_connects(self, hub, sample_functions):
+        """connect() should parse devices and open the socket."""
+        with patch.object(hub._socket_manager, "connect", new_callable=AsyncMock) as mock_connect:
+            await hub.connect(sample_functions)
 
-            mock_auth.assert_called_once()
-            mock_proj.assert_called_once()
-            assert result == {"Home": "p1"}
+            mock_connect.assert_called_once()
+            assert len(hub.get_lights()) > 0
+            assert len(hub.get_scenes()) > 0
 
     @pytest.mark.asyncio
     async def test_close_cleans_up(self, hub):
-        """Close should clean up both API client and socket."""
-        with patch.object(hub._api_client, "close", new_callable=AsyncMock) as mock_api_close, \
-             patch.object(hub._socket_manager, "close", new_callable=AsyncMock) as mock_sock_close:
+        """Close should clean up the socket connection."""
+        with patch.object(hub._socket_manager, "close", new_callable=AsyncMock) as mock_sock_close:
             await hub.close()
 
-            mock_api_close.assert_called_once()
             mock_sock_close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_context_manager(self):
         """Hub should work as an async context manager."""
-        async with Hub("192.168.1.1", "user", "pass") as hub:
+        async with Hub("192.168.1.1") as hub:
             assert hub is not None
         # close() is called automatically by __aexit__

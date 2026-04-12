@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 
-from sensio_lib import Hub, SensioAuthenticationError, SensioConnectionError
+from sensio_lib import Hub, SensioApi, SensioAuthenticationError, SensioConnectionError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,19 +23,22 @@ async def main():
     password = os.environ["SENSIO_PASSWORD"]
 
     try:
-        async with Hub(hub_address, username, password) as hub:
-            # Authenticate with Sensio cloud
-            projects = await hub.login()
+        # Step 1: Fetch device data from the Sensio cloud
+        async with SensioApi(username, password) as api:
+            projects = await api.login()
             logger.info("Available projects: %s", list(projects.keys()))
 
             if not projects:
                 logger.error("No projects found")
                 return
 
-            # Select the first project
             project_name, project_id = next(iter(projects.items()))
             logger.info("Using project: %s", project_name)
-            await hub.set_project(project_id)
+            functions_data = await api.get_devices(project_id)
+
+        # Step 2: Connect to the local controller with cached data
+        async with Hub(hub_address) as hub:
+            await hub.connect(functions_data)
 
             # List all lights
             lights = hub.get_lights()

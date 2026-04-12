@@ -1,49 +1,33 @@
-"""Hub orchestrator for the Sensio smart house system."""
+"""Hub for local control of the Sensio smart house system."""
 
 from __future__ import annotations
 
-from sensio_lib.api_client import SensioApiClient
 from sensio_lib.light import Light
 from sensio_lib.scene import Scene
 from sensio_lib.socket_manager import SocketManager
 
 
 class Hub:
-    """Main entry point for controlling a Sensio smart house system.
+    """Local controller for a Sensio smart house system.
 
-    Handles cloud API authentication, device discovery, and local control.
+    Manages the socket connection to the physical controller and provides
+    access to lights and scenes. Device data is supplied via connect(),
+    typically from cached data originally fetched through SensioApi.
     """
 
-    def __init__(self, server_address: str, username: str, password: str) -> None:
-        self._api_client = SensioApiClient(username, password)
+    def __init__(self, server_address: str) -> None:
         self._socket_manager = SocketManager(server_address)
         self._lights: list[Light] = []
         self._scenes: list[Scene] = []
-        self._projects: dict[str, str] = {}
 
-    async def login(self) -> dict[str, str]:
-        """Authenticate with the Sensio cloud and return available projects.
+    async def connect(self, functions_data: dict) -> None:
+        """Parse device data and connect to the local controller.
 
-        Returns:
-            Dictionary of {project_name: project_id}.
+        Args:
+            functions_data: Functions JSON dict as returned by
+                SensioApi.get_devices(). Can be cached and replayed.
         """
-        await self._api_client.authenticate()
-        self._projects = await self._api_client.get_projects()
-        return self._projects
-
-    async def set_project(self, project_id: str) -> None:
-        """Set the active project and discover devices.
-
-        Fetches device configuration from the cloud API and establishes
-        the local socket connection to the controller.
-        """
-        functions_data = await self._api_client.get_functions(project_id)
         self._parse_devices(functions_data)
-
-        # Close API client — no longer needed after device discovery
-        await self._api_client.close()
-
-        # Connect to the local controller
         await self._socket_manager.connect()
 
     def get_lights(self) -> list[Light]:
@@ -202,8 +186,7 @@ class Hub:
         return internal_name
 
     async def close(self) -> None:
-        """Close all connections and clean up resources."""
-        await self._api_client.close()
+        """Close the socket connection and clean up resources."""
         await self._socket_manager.close()
 
     async def __aenter__(self) -> Hub:
