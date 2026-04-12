@@ -2,7 +2,7 @@
 
 A minimal async library to control Sensio (EOPT Home) smart house systems. Designed for easy integration with Home Assistant.
 
-## Features (v1.0.0)
+## Features (v1.1.0)
 
 - **Local control** — All device commands sent directly to your controller on the LAN
 - **Cloud API** — Fetch device configuration from the EOPT cloud (one-time setup)
