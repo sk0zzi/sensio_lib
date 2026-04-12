@@ -143,21 +143,32 @@ class Hub:
 
     def _parse_scenes(self, functions: list[dict]) -> list[Scene]:
         """Parse scene functions into Scene objects."""
-        scene_sub_types = {"LigthSc1Room", "LigthSc2Room", "LigthSc3Room", "LigthSc4Room"}
+        room_scene_sub_types = {
+            "LigthSc1Room", "LigthSc2Room", "LigthSc3Room", "LigthSc4Room",
+        }
+        house_scene_sub_types = {
+            "house_in": "Home",
+            "house_away": "Away",
+            "house_night": "Night",
+            "house_vacation": "Vacation",
+        }
         scenes: list[Scene] = []
 
         for func in functions:
-            if func["subType"] not in scene_sub_types:
-                continue
-
+            sub_type = func["subType"]
             zone_id = func["zoneId"]
             address = func["address"]
 
-            # Derive a useful name from the internal name
-            # e.g. "B_LightStue_Sc1" -> "Stue Scene 1"
-            room_name = self._extract_room_name(func["name"])
-            scene_number = func["subType"].replace("LigthSc", "").replace("Room", "")
-            display_name = f"{room_name} Scene {scene_number}"
+            if sub_type in room_scene_sub_types:
+                # Room light scene: e.g. "B_LightStue_Sc1" -> "Stue Scene 1"
+                room_name = self._extract_room_name(func["name"])
+                scene_number = sub_type.replace("LigthSc", "").replace("Room", "")
+                display_name = f"{room_name} Scene {scene_number}"
+            elif sub_type in house_scene_sub_types:
+                # House-level scene: e.g. house_in -> "House Home"
+                display_name = f"House {house_scene_sub_types[sub_type]}"
+            else:
+                continue
 
             scenes.append(
                 Scene(

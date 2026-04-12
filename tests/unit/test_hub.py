@@ -69,6 +69,19 @@ class TestDeviceParsing:
         assert "Stue Scene 1" in scene_names
         assert "Stue Scene 4" in scene_names
 
+    def test_parse_house_scenes(self, hub, sample_functions):
+        """House-level scenes (house_in, house_away, etc.) should be parsed."""
+        hub._parse_devices(sample_functions)
+        scenes = hub.get_scenes()
+
+        house_scenes = [s for s in scenes if s.name.startswith("House ")]
+        assert len(house_scenes) == 4
+
+        house_scene_names = {s.name for s in house_scenes}
+        assert house_scene_names == {
+            "House Home", "House Away", "House Night", "House Vacation",
+        }
+
     def test_no_duplicate_lights(self, hub, sample_functions):
         """Each subGroupId should produce exactly one light."""
         hub._parse_devices(sample_functions)

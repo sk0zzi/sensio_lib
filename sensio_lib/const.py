@@ -9,9 +9,9 @@ SENSIO_AGENT_REQUEST = {
 }
 
 # URLS
-SENSIO_BASE_URL = 'https://unity.sensio.no/api/v1'
-SENSIO_TOKEN_URL = 'https://unity.sensio.no/api/v1/tokens'
-SENSIO_PROJECTS_URL = 'https://unity.sensio.no/api/v1/users/self/projects?include=controllers&installerProjectsOnly=false&siteIdentifier=self'
+SENSIO_BASE_URL = 'https://unity.eopthome.no/api/v1'
+SENSIO_TOKEN_URL = 'https://unity.eopthome.no/api/v1/tokens'
+SENSIO_PROJECTS_URL = 'https://unity.eopthome.no/api/v1/users/self/projects?include=controllers&installerProjectsOnly=false&siteIdentifier=self'
 
 # Hex
 COMMAND_PREFIX = '\x01'
