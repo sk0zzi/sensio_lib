@@ -18,3 +18,11 @@ This library has been tested with a Sensio X1 controller. Testing is limited, so
 
 - Python 3.10+
 - `aiohttp`
+
+## Testing
+
+Example script reads env params for sensitive data and does not store anything. Example for lunching it and testing:
+
+```
+SENSIO_USERNAME="your user name / email" SENSIO_PASSWORD="your password" SENSIO_HUB_IP="your hub IP" python example.py
+```
