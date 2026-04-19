@@ -15,3 +15,7 @@ class SensioConnectionError(SensioException):
 
 class SensioCommandError(SensioException):
     """Raised when a command to the Sensio controller fails."""
+
+
+class SensioHubValidationError(SensioException):
+    """Raised when a device responds but is not a valid Sensio hub."""

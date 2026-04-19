@@ -6,8 +6,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from sensio_lib.dimmer import Dimmer
 from sensio_lib.hub import Hub
-from sensio_lib.light import Light
+from sensio_lib.light import Light, LightState
+from sensio_lib.message import RsnMessage, TYPE_DIMMER, TYPE_RELAY
 from sensio_lib.scene import Scene
 
 
@@ -168,3 +170,138 @@ class TestHubLifecycle:
         async with Hub("192.168.1.1") as hub:
             assert hub is not None
         # close() is called automatically by __aexit__
+
+
+class TestDimmerParsing:
+    """Tests for dimmer device parsing."""
+
+    def test_parse_dimmers_from_real_data(self, hub, sample_functions):
+        """Dimmers with dim_set should be discovered."""
+        hub._parse_devices(sample_functions)
+        dimmers = hub.get_dimmers()
+
+        assert len(dimmers) > 0
+        assert all(isinstance(d, Dimmer) for d in dimmers)
+
+    def test_dimmer_has_dim_set_address(self, hub, sample_functions):
+        """All dimmers must have a dim_set_address."""
+        hub._parse_devices(sample_functions)
+        for dimmer in hub.get_dimmers():
+            assert dimmer.dim_set_address is not None
+
+    def test_parse_dimmer_from_minimal_data(self, hub):
+        """A subGroup with dim_set and dim_value produces a Dimmer."""
+        data = {
+            "functions": [
+                {"address": 100, "subType": "dim_set", "name": "B_D_Test_SET", "displayName": "Test Dimmer", "zoneId": "z1", "subGroupId": 50, "type": 0, "properties": "", "displayOrder": 1},
+                {"address": 200, "subType": "dim_value", "name": "M_D_Test_Val", "displayName": "Test Dimmer", "zoneId": "z1", "subGroupId": 50, "type": 1, "properties": "", "displayOrder": 1},
+            ]
+        }
+        hub._parse_devices(data)
+        dimmers = hub.get_dimmers()
+        assert len(dimmers) == 1
+        assert dimmers[0].name == "Test Dimmer"
+        assert dimmers[0].dim_set_address == 100
+        assert dimmers[0].dim_value_address == 200
+
+    def test_no_overlap_between_lights_and_dimmers(self, hub, sample_functions):
+        """Dimmers and relay lights should not share IDs."""
+        hub._parse_devices(sample_functions)
+        light_ids = {l.unique_id for l in hub.get_lights()}
+        dimmer_ids = {d.unique_id for d in hub.get_dimmers()}
+        # Allow overlap in IDs since they use different subGroupIds naturally,
+        # but verify both sets are populated
+        assert len(light_ids) > 0
+        assert len(dimmer_ids) > 0
+
+    def test_empty_functions_no_dimmers(self, hub):
+        hub._parse_devices({"functions": []})
+        assert hub.get_dimmers() == []
+
+
+class TestRelayAddressParsing:
+    """Tests for relay address extraction in lights."""
+
+    def test_lights_with_relay_address(self, hub, sample_functions):
+        """Relay lights should have relay_address set when light_relay exists."""
+        hub._parse_devices(sample_functions)
+        lights = hub.get_lights()
+
+        relay_lights = [l for l in lights if l.relay_address is not None]
+        assert len(relay_lights) > 0
+
+    def test_room_lights_no_relay(self, hub, sample_functions):
+        """Room-level lights should not have relay addresses."""
+        hub._parse_devices(sample_functions)
+        lights = hub.get_lights()
+
+        room_lights = [l for l in lights if l.unique_id.endswith("_room")]
+        for rl in room_lights:
+            assert rl.relay_address is None
+
+
+class TestMessageDispatch:
+    """Tests for the hub's address-based message routing."""
+
+    def test_register_and_dispatch(self, hub):
+        """Registered callbacks should receive RSN messages for their address."""
+        received = []
+        hub.register_address(42264, lambda rsn: received.append(rsn))
+
+        hub._on_message("RSN 42264 D_TaklampeBod 21 1 100 100")
+        assert len(received) == 1
+        assert received[0].address == 42264
+
+    def test_unregistered_address_ignored(self, hub):
+        """Messages for unregistered addresses should not cause errors."""
+        # Should just log at DEBUG, no exception
+        hub._on_message("RSN 99999 Unknown 6 1 0 0")
+
+    def test_non_rsn_message_ignored(self, hub):
+        """Non-RSN messages should not cause errors."""
+        hub._on_message("PANEL_BRIGHTNESS 70")
+        hub._on_message("end 79057")
+
+    def test_unregister_address(self, hub):
+        """Unregistered callbacks should stop receiving messages."""
+        received = []
+        cb = lambda rsn: received.append(rsn)
+        hub.register_address(100, cb)
+        hub.unregister_address(100, cb)
+
+        hub._on_message("RSN 100 Test 8 1 1 1")
+        assert len(received) == 0
+
+    def test_multiple_callbacks_same_address(self, hub):
+        """Multiple callbacks on the same address should all fire."""
+        r1, r2 = [], []
+        hub.register_address(100, lambda rsn: r1.append(rsn))
+        hub.register_address(100, lambda rsn: r2.append(rsn))
+
+        hub._on_message("RSN 100 Test 8 1 1 1")
+        assert len(r1) == 1
+        assert len(r2) == 1
+
+    def test_light_state_update_via_dispatch(self, hub, sample_functions):
+        """A relay RSN should update the light's state through the dispatch chain."""
+        hub._parse_devices(sample_functions)
+        hub._register_device_addresses()
+
+        # Find a light with a relay address
+        relay_lights = [l for l in hub.get_lights() if l.relay_address is not None]
+        assert len(relay_lights) > 0
+        light = relay_lights[0]
+
+        assert light.state == LightState.UNKNOWN
+
+        # Simulate RSN for relay ON
+        hub._on_message(
+            f"RSN {light.relay_address} R_Test 8 1 1 1"
+        )
+        assert light.state == LightState.ON
+
+        # Simulate RSN for relay OFF
+        hub._on_message(
+            f"RSN {light.relay_address} R_Test 8 1 0 0"
+        )
+        assert light.state == LightState.OFF

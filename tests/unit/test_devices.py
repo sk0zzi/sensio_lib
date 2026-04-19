@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from sensio_lib.light import Light, LightState
+from sensio_lib.message import RsnMessage, TYPE_RELAY, TYPE_DIMMER
 from sensio_lib.scene import Scene
 
 
@@ -53,6 +54,85 @@ class TestLight:
     def test_repr(self, mock_socket):
         light = Light("1", "Test", "z", on_address=0, off_address=0, socket_manager=mock_socket)
         assert "Test" in repr(light)
+
+    def test_handle_state_update_on(self, mock_socket):
+        light = Light("1", "Test", "z", on_address=100, off_address=200,
+                       socket_manager=mock_socket, relay_address=300)
+        rsn = RsnMessage(address=300, name="R_Test", type_code=TYPE_RELAY,
+                         flag=1, field_a=1.0, field_b=1.0)
+        light.handle_state_update(rsn)
+        assert light.state == LightState.ON
+
+    def test_handle_state_update_off(self, mock_socket):
+        light = Light("1", "Test", "z", on_address=100, off_address=200,
+                       socket_manager=mock_socket, relay_address=300)
+        light._state = LightState.ON
+        rsn = RsnMessage(address=300, name="R_Test", type_code=TYPE_RELAY,
+                         flag=1, field_a=0.0, field_b=0.0)
+        light.handle_state_update(rsn)
+        assert light.state == LightState.OFF
+
+    def test_handle_state_update_ignores_wrong_type(self, mock_socket):
+        light = Light("1", "Test", "z", on_address=100, off_address=200,
+                       socket_manager=mock_socket, relay_address=300)
+        rsn = RsnMessage(address=300, name="D_Test", type_code=TYPE_DIMMER,
+                         flag=1, field_a=100.0, field_b=100.0)
+        light.handle_state_update(rsn)
+        assert light.state == LightState.UNKNOWN  # Unchanged
+
+    def test_callback_fired_on_state_change(self, mock_socket):
+        light = Light("1", "Test", "z", on_address=100, off_address=200,
+                       socket_manager=mock_socket, relay_address=300)
+        called = []
+        light.set_callback(lambda: called.append(True))
+
+        rsn = RsnMessage(address=300, name="R_Test", type_code=TYPE_RELAY,
+                         flag=1, field_a=1.0, field_b=1.0)
+        light.handle_state_update(rsn)
+        assert len(called) == 1
+
+    def test_callback_not_fired_when_unchanged(self, mock_socket):
+        light = Light("1", "Test", "z", on_address=100, off_address=200,
+                       socket_manager=mock_socket, relay_address=300)
+        # Set to ON
+        light.handle_state_update(RsnMessage(
+            address=300, name="R_Test", type_code=TYPE_RELAY,
+            flag=1, field_a=1.0, field_b=1.0,
+        ))
+
+        called = []
+        light.set_callback(lambda: called.append(True))
+
+        # Same state again
+        light.handle_state_update(RsnMessage(
+            address=300, name="R_Test", type_code=TYPE_RELAY,
+            flag=1, field_a=1.0, field_b=1.0,
+        ))
+        assert len(called) == 0
+
+    def test_remove_callback(self, mock_socket):
+        light = Light("1", "Test", "z", on_address=100, off_address=200,
+                       socket_manager=mock_socket, relay_address=300)
+        called = []
+        cb = lambda: called.append(True)
+        light.set_callback(cb)
+        light.remove_callback(cb)
+
+        light.handle_state_update(RsnMessage(
+            address=300, name="R_Test", type_code=TYPE_RELAY,
+            flag=1, field_a=1.0, field_b=1.0,
+        ))
+        assert len(called) == 0
+
+    def test_relay_address_property(self, mock_socket):
+        light = Light("1", "Test", "z", on_address=100, off_address=200,
+                       socket_manager=mock_socket, relay_address=300)
+        assert light.relay_address == 300
+
+    def test_relay_address_none(self, mock_socket):
+        light = Light("1", "Test", "z", on_address=100, off_address=200,
+                       socket_manager=mock_socket)
+        assert light.relay_address is None
 
 
 class TestScene:
