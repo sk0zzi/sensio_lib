@@ -25,8 +25,8 @@ def _make_writer() -> MagicMock:
 
 
 VALID_CONNECT = (
-    b'\x01<connect sn="980284010F50" ip="192.168.8.31" mac="98:02:84:01:0f:50"'
-    b' pname="" pid="4BA386BD-000899" pdate="1269008061" psum="4128"'
+    b'\x01<connect sn="A1B2C3D4E5F6" ip="192.168.1.100" mac="a1:b2:c3:d4:e5:f6"'
+    b' pname="" pid="1F2E3D4C-001234" pdate="1269008061" psum="4128"'
     b' rg="" fw="etn-spux Feb 18 2022 17:05:01 6.12.1-65"/>\x02'
 )
 
@@ -41,11 +41,11 @@ class TestValidateHub:
 
         with patch("sensio_lib.validate.asyncio.open_connection",
                     return_value=(reader, writer)):
-            info = await validate_hub("192.168.8.31")
+            info = await validate_hub("192.168.1.100")
 
-        assert info.serial == "980284010F50"
-        assert info.ip == "192.168.8.31"
-        assert info.mac == "98:02:84:01:0f:50"
+        assert info.serial == "A1B2C3D4E5F6"
+        assert info.ip == "192.168.1.100"
+        assert info.mac == "a1:b2:c3:d4:e5:f6"
         assert "6.12.1-65" in info.firmware
         writer.close.assert_called_once()
 
@@ -71,7 +71,7 @@ class TestValidateHub:
         with patch("sensio_lib.validate.asyncio.open_connection",
                     return_value=(reader, writer)):
             with pytest.raises(SensioHubValidationError, match="closed immediately"):
-                await validate_hub("192.168.8.31")
+                await validate_hub("192.168.1.100")
 
     @pytest.mark.asyncio
     async def test_no_framed_messages(self):
@@ -81,7 +81,7 @@ class TestValidateHub:
         with patch("sensio_lib.validate.asyncio.open_connection",
                     return_value=(reader, writer)):
             with pytest.raises(SensioHubValidationError, match="no framed"):
-                await validate_hub("192.168.8.31")
+                await validate_hub("192.168.1.100")
 
     @pytest.mark.asyncio
     async def test_not_a_sensio_hub(self):
@@ -91,7 +91,7 @@ class TestValidateHub:
         with patch("sensio_lib.validate.asyncio.open_connection",
                     return_value=(reader, writer)):
             with pytest.raises(SensioHubValidationError, match="not a Sensio"):
-                await validate_hub("192.168.8.31")
+                await validate_hub("192.168.1.100")
 
     @pytest.mark.asyncio
     async def test_read_timeout(self):
@@ -102,7 +102,7 @@ class TestValidateHub:
         with patch("sensio_lib.validate.asyncio.open_connection",
                     return_value=(reader, writer)):
             with pytest.raises(SensioHubValidationError, match="no data"):
-                await validate_hub("192.168.8.31")
+                await validate_hub("192.168.1.100")
 
     @pytest.mark.asyncio
     async def test_custom_port(self):
