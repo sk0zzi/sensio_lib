@@ -11,6 +11,7 @@ from sensio_lib.hub import Hub
 from sensio_lib.light import Light, LightState
 from sensio_lib.scene import Scene
 from sensio_lib.sensio_api import SensioApi
+from sensio_lib.const import SensioEnvironment
 
 __all__ = [
     "Device",
@@ -19,6 +20,7 @@ __all__ = [
     "LightState",
     "Scene",
     "SensioApi",
+    "SensioEnvironment",
     "SensioAuthenticationError",
     "SensioCommandError",
     "SensioConnectionError",

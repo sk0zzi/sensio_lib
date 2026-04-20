@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from sensio_lib.sensio_api import SensioApi
+from sensio_lib.const import SensioEnvironment
 
 
 @pytest.fixture
@@ -14,6 +15,11 @@ def api():
 
 class TestSensioApi:
     """Tests for login, get_devices, close."""
+
+    def test_environment_passed_to_client(self):
+        """SensioApi should pass the environment parameter down to the client."""
+        api = SensioApi("user", "pass", environment=SensioEnvironment.PILOT_HA)
+        assert api._api_client._environment == SensioEnvironment.PILOT_HA
 
     @pytest.mark.asyncio
     async def test_login_returns_projects(self, api):

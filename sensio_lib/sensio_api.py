@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sensio_lib.api_client import SensioApiClient
+from sensio_lib.const import SensioEnvironment
 
 
 class SensioApi:
@@ -12,8 +13,8 @@ class SensioApi:
     The returned functions data can be cached and passed to Hub.connect().
     """
 
-    def __init__(self, username: str, password: str) -> None:
-        self._api_client = SensioApiClient(username, password)
+    def __init__(self, username: str, password: str, environment: SensioEnvironment = SensioEnvironment.UNITY) -> None:
+        self._api_client = SensioApiClient(username, password, environment)
 
     async def login(self) -> dict[str, str]:
         """Authenticate with the Sensio cloud and return available projects.

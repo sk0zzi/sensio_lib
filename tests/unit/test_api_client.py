@@ -6,11 +6,37 @@ import pytest
 
 from sensio_lib.api_client import SensioApiClient
 from sensio_lib.exceptions import SensioAuthenticationError, SensioException
-
+from sensio_lib.const import (
+    SensioEnvironment,
+    SENSIO_HA_PILOT_BASE_URL,
+    SENSIO_HA_PILOT_PROJECTS_URL,
+    SENSIO_HA_PILOT_TOKEN_URL,
+    SENSIO_BASE_URL,
+    SENSIO_PROJECTS_URL,
+    SENSIO_TOKEN_URL,
+)
 
 @pytest.fixture
 def client():
     return SensioApiClient("testuser", "testpass")
+
+class TestInitialization:
+    """Tests for API client initialization."""
+    
+    def test_default_environment(self):
+        client = SensioApiClient("user", "pass")
+        assert client._environment == SensioEnvironment.UNITY
+        assert client._base_url == SENSIO_BASE_URL
+        assert client._token_url == SENSIO_TOKEN_URL
+        assert client._projects_url == SENSIO_PROJECTS_URL
+        
+    def test_pilot_ha_environment(self):
+        client = SensioApiClient("user", "pass", environment=SensioEnvironment.PILOT_HA)
+        assert client._environment == SensioEnvironment.PILOT_HA
+        assert client._base_url == SENSIO_HA_PILOT_BASE_URL
+        assert client._token_url == SENSIO_HA_PILOT_TOKEN_URL
+        assert client._projects_url == SENSIO_HA_PILOT_PROJECTS_URL
+
 
 
 class TestAuthenticate:
