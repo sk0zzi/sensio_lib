@@ -123,3 +123,5 @@ tests/integration/
 
 # Ignore vscode files
 .vscode/
+
+example_data/
