@@ -26,4 +26,4 @@ COMMAND_POSTFIX = '\x02'
 
 class SensioEnvironment(StrEnum):
     UNITY = "unity"
-    PILOT_HA = "pilot-ha"
+    HA_PILOT = "ha-pilot"

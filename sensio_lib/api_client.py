@@ -28,7 +28,7 @@ class SensioApiClient:
         self._password = password
         self._environment = environment
 
-        if self._environment == SensioEnvironment.PILOT_HA:
+        if self._environment == SensioEnvironment.HA_PILOT:
             self._base_url = SENSIO_HA_PILOT_BASE_URL
             self._token_url = SENSIO_HA_PILOT_TOKEN_URL
             self._projects_url = SENSIO_HA_PILOT_PROJECTS_URL

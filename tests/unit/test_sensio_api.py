@@ -18,8 +18,8 @@ class TestSensioApi:
 
     def test_environment_passed_to_client(self):
         """SensioApi should pass the environment parameter down to the client."""
-        api = SensioApi("user", "pass", environment=SensioEnvironment.PILOT_HA)
-        assert api._api_client._environment == SensioEnvironment.PILOT_HA
+        api = SensioApi("user", "pass", environment=SensioEnvironment.HA_PILOT)
+        assert api._api_client._environment == SensioEnvironment.HA_PILOT
 
     @pytest.mark.asyncio
     async def test_login_returns_projects(self, api):
