@@ -1,7 +1,5 @@
 """Tests for Hub device parsing and orchestration."""
 
-import json
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,10 +11,49 @@ from sensio_lib.scene import Scene
 
 @pytest.fixture
 def sample_functions():
-    """Load the example functions.json test data."""
-    path = Path(__file__).resolve().parents[2] / "example_data" / "functions.json"
-    with open(path) as f:
-        return json.load(f)
+    """Synthetic functions data covering all device types.
+
+    Contains:
+    - 2 individual lights (subGroupId 27 in Stue, subGroupId 42 in Kontor)
+    - 2 room-level light controls (Stue, Kontor)
+    - 8 room scenes (4 per room)
+    - 4 house-level scenes
+    - 1 non-light function (heating) that should be ignored
+    """
+    return {"functions": [
+        # --- Individual lights (paired on/off by subGroupId) ---
+        # Stue – "Vindu sør" (subGroupId=27)
+        {"address": 101, "subType": "light_on",  "name": "B_LightStue_ON",  "displayName": "Vindu sør",   "zoneId": "z-stue",   "subGroupId": 27, "type": 0, "properties": "", "displayOrder": 1},
+        {"address": 102, "subType": "light_off", "name": "B_LightStue_OFF", "displayName": "Vindu sør",   "zoneId": "z-stue",   "subGroupId": 27, "type": 0, "properties": "", "displayOrder": 2},
+        # Kontor – "Skrivebord" (subGroupId=42)
+        {"address": 201, "subType": "light_on",  "name": "B_LightKontor_ON",  "displayName": "Skrivebord", "zoneId": "z-kontor", "subGroupId": 42, "type": 0, "properties": "", "displayOrder": 1},
+        {"address": 202, "subType": "light_off", "name": "B_LightKontor_OFF", "displayName": "Skrivebord", "zoneId": "z-kontor", "subGroupId": 42, "type": 0, "properties": "", "displayOrder": 2},
+
+        # --- Room-level light controls (subGroupId == 0) ---
+        {"address": 301, "subType": "LightOnRoom",  "name": "B_LightStue_ON",    "displayName": "Stue On",    "zoneId": "z-stue",   "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+        {"address": 302, "subType": "LightOffRoom", "name": "B_LightStue_OFF",   "displayName": "Stue Off",   "zoneId": "z-stue",   "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+        {"address": 303, "subType": "LightOnRoom",  "name": "B_LightKontor_ON",  "displayName": "Kontor On",  "zoneId": "z-kontor", "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+        {"address": 304, "subType": "LightOffRoom", "name": "B_LightKontor_OFF", "displayName": "Kontor Off", "zoneId": "z-kontor", "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+
+        # --- Room scenes (4 per room) ---
+        {"address": 401, "subType": "LigthSc1Room", "name": "B_LightStue_Sc1",   "displayName": "Stue Sc1",   "zoneId": "z-stue",   "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+        {"address": 402, "subType": "LigthSc2Room", "name": "B_LightStue_Sc2",   "displayName": "Stue Sc2",   "zoneId": "z-stue",   "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+        {"address": 403, "subType": "LigthSc3Room", "name": "B_LightStue_Sc3",   "displayName": "Stue Sc3",   "zoneId": "z-stue",   "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+        {"address": 404, "subType": "LigthSc4Room", "name": "B_LightStue_Sc4",   "displayName": "Stue Sc4",   "zoneId": "z-stue",   "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+        {"address": 411, "subType": "LigthSc1Room", "name": "B_LightKontor_Sc1", "displayName": "Kontor Sc1", "zoneId": "z-kontor", "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+        {"address": 412, "subType": "LigthSc2Room", "name": "B_LightKontor_Sc2", "displayName": "Kontor Sc2", "zoneId": "z-kontor", "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+        {"address": 413, "subType": "LigthSc3Room", "name": "B_LightKontor_Sc3", "displayName": "Kontor Sc3", "zoneId": "z-kontor", "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+        {"address": 414, "subType": "LigthSc4Room", "name": "B_LightKontor_Sc4", "displayName": "Kontor Sc4", "zoneId": "z-kontor", "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+
+        # --- House-level scenes ---
+        {"address": 501, "subType": "house_in",       "name": "B_HouseIn",       "displayName": "House In",       "zoneId": "z-house", "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+        {"address": 502, "subType": "house_away",     "name": "B_HouseAway",     "displayName": "House Away",     "zoneId": "z-house", "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+        {"address": 503, "subType": "house_night",    "name": "B_HouseNight",    "displayName": "House Night",    "zoneId": "z-house", "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+        {"address": 504, "subType": "house_vacation", "name": "B_HouseVacation", "displayName": "House Vacation", "zoneId": "z-house", "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+
+        # --- Non-light function (should be ignored) ---
+        {"address": 900, "subType": "memHeatAway", "name": "M_HeatAway", "displayName": "Heat Away", "zoneId": "z-stue", "subGroupId": 0, "type": 1, "properties": "", "displayOrder": -1},
+    ]}
 
 
 @pytest.fixture
