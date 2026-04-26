@@ -2,8 +2,9 @@
 
 A minimal async library to control Sensio (EOPT Home) smart house systems. Designed for easy integration with Home Assistant.
 
-## Features (v1.1.0)
+## Features (v1.2.0)
 
+- **Unity and HA pilot** - Supports getting devices from both unity and ha-pilot. 
 - **Local control** — All device commands sent directly to your controller on the LAN
 - **Cloud API** — Fetch device configuration from the EOPT cloud (one-time setup)
 - **Lights** — Turn individual lights and room-level lights on/off
