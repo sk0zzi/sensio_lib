@@ -58,6 +58,12 @@ This library has been tested with a Sensio X1 controller. Testing is limited, so
 
 Example script reads env params for sensitive data and does not store anything. Example for launching it and testing:
 
-```
+```bash
 SENSIO_USERNAME="your user name / email" SENSIO_PASSWORD="your password" SENSIO_HUB_IP="your hub IP" python example.py
+```
+
+You can also optionally specify `SENSIO_ENV` to target a different cloud environment (defaults to `unity`, can also be `pilot-ha`):
+
+```bash
+SENSIO_ENV="pilot-ha" SENSIO_USERNAME="your user name / email" SENSIO_PASSWORD="your password" SENSIO_HUB_IP="your hub IP" python example.py
 ```

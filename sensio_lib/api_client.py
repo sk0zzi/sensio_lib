@@ -10,6 +10,10 @@ from sensio_lib.const import (
     SENSIO_BASE_URL,
     SENSIO_PROJECTS_URL,
     SENSIO_TOKEN_URL,
+    SENSIO_HA_PILOT_BASE_URL,
+    SENSIO_HA_PILOT_PROJECTS_URL,
+    SENSIO_HA_PILOT_TOKEN_URL,
+    SensioEnvironment,
 )
 from sensio_lib.exceptions import SensioAuthenticationError, SensioException
 
@@ -19,9 +23,20 @@ logger = logging.getLogger(__name__)
 class SensioApiClient:
     """Handles authentication and data retrieval from the Sensio cloud API."""
 
-    def __init__(self, username: str, password: str) -> None:
+    def __init__(self, username: str, password: str, environment: SensioEnvironment = SensioEnvironment.UNITY) -> None:
         self._username = username
         self._password = password
+        self._environment = environment
+
+        if self._environment == SensioEnvironment.HA_PILOT:
+            self._base_url = SENSIO_HA_PILOT_BASE_URL
+            self._token_url = SENSIO_HA_PILOT_TOKEN_URL
+            self._projects_url = SENSIO_HA_PILOT_PROJECTS_URL
+        else:
+            self._base_url = SENSIO_BASE_URL
+            self._token_url = SENSIO_TOKEN_URL
+            self._projects_url = SENSIO_PROJECTS_URL
+
         self._token: str | None = None
         self._session: aiohttp.ClientSession | None = None
 
@@ -37,7 +52,7 @@ class SensioApiClient:
 
         try:
             async with session.post(
-                SENSIO_TOKEN_URL,
+                self._token_url,
                 auth=auth,
                 json=SENSIO_AGENT_REQUEST,
                 headers={"Content-Type": "application/json"},
@@ -65,7 +80,7 @@ class SensioApiClient:
 
         try:
             async with session.get(
-                SENSIO_PROJECTS_URL,
+                self._projects_url,
                 headers={"Authorization": f"Token {self._token}"},
             ) as response:
                 if response.status != 200:
@@ -86,7 +101,7 @@ class SensioApiClient:
             raise SensioException("Not authenticated. Call authenticate() first.")
 
         session = await self._get_session()
-        url = f"{SENSIO_BASE_URL}/projects/{project_id}/functions"
+        url = f"{self._base_url}/projects/{project_id}/functions"
 
         try:
             async with session.get(

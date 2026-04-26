@@ -4,7 +4,13 @@ import asyncio
 import logging
 import os
 
-from sensio_lib import Hub, SensioApi, SensioAuthenticationError, SensioConnectionError
+from sensio_lib import (
+    Hub,
+    SensioApi,
+    SensioAuthenticationError,
+    SensioConnectionError,
+    SensioEnvironment,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,14 +23,21 @@ async def main():
     # Set these environment variables before running:
     #   export SENSIO_USERNAME="your_username"
     #   export SENSIO_PASSWORD="your_password"
-    #   export SENSIO_HUB_IP="192.168.x.x"
+    #   export SENSIO_ENV="pilot-ha"  # Optional, defaults to "unity"
     hub_address = os.environ["SENSIO_HUB_IP"]
     username = os.environ["SENSIO_USERNAME"]
     password = os.environ["SENSIO_PASSWORD"]
+    env_str = os.environ.get("SENSIO_ENV", "unity")
+    
+    try:
+        environment = SensioEnvironment(env_str)
+    except ValueError:
+        logger.warning("Invalid SENSIO_ENV '%s', defaulting to unity", env_str)
+        environment = SensioEnvironment.UNITY
 
     try:
         # Step 1: Fetch device data from the Sensio cloud
-        async with SensioApi(username, password) as api:
+        async with SensioApi(username, password, environment) as api:
             projects = await api.login()
             logger.info("Available projects: %s", list(projects.keys()))
 
