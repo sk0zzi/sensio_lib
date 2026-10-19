@@ -31,6 +31,7 @@ class Hub:
 
     def __init__(self, server_address: str) -> None:
         self._socket_manager = SocketManager(server_address)
+        self._zones: dict[str, str] = {}
         self._lights: list[Light] = []
         self._dimmers: list[Dimmer] = []
         self._scenes: list[Scene] = []
@@ -133,6 +134,10 @@ class Hub:
         for addr, device in self._device_registry.items():
             logger.info("  %s addr=%d -> %s", type(device).__name__, addr, device.name)
 
+    def get_zones(self) -> dict[str, str]:
+        """Return all discovered zones as a mapping of zone_id to zone_name."""
+        return dict(self._zones)
+
     def get_lights(self) -> list[Light]:
         """Return all discovered relay lights."""
         return list(self._lights)
@@ -199,9 +204,23 @@ class Hub:
         """Parse the functions JSON into Light, Dimmer, and Scene objects."""
         functions = functions_data.get("functions", [])
 
+        self._zones = self._parse_zones(functions)
         self._lights = self._parse_lights(functions)
         self._dimmers = self._parse_dimmers(functions)
         self._scenes = self._parse_scenes(functions)
+
+    @staticmethod
+    def _parse_zones(functions: list[dict]) -> dict[str, str]:
+        """Parse zone names from memLightRoomCurSc entries."""
+        zones: dict[str, str] = {}
+        for func in functions:
+            if func.get("subType") != "memLightRoomCurSc":
+                continue
+            zone_id = func.get("zoneId")
+            display_name = func.get("displayName") or ""
+            if zone_id and display_name:
+                zones[zone_id] = display_name.removesuffix(" Light Scene").strip()
+        return zones
 
     def _parse_lights(self, functions: list[dict]) -> list[Light]:
         """Parse individual lights, dimmers, and room-level light controls.
@@ -248,13 +267,15 @@ class Hub:
 
         for sub_group_id, info in groups.items():
             if info["on_address"] is not None and info["off_address"] is not None:
+                zone_id = info["zone_id"]
                 light = Light(
                     unique_id=str(sub_group_id),
                     name=info["name"],
-                    zone_id=info["zone_id"],
+                    zone_id=zone_id,
                     on_address=info["on_address"],
                     off_address=info["off_address"],
                     socket_manager=self._socket_manager,
+                    zone_name=self._zones.get(zone_id),
                 )
                 lights.append(light)
 
@@ -300,13 +321,15 @@ class Hub:
         dimmers: list[Dimmer] = []
         for sub_group_id, info in groups.items():
             if info["set_address"] is not None and info["value_address"] is not None:
+                zone_id = info["zone_id"]
                 dimmer = Dimmer(
                     unique_id=str(sub_group_id),
                     name=info["name"],
-                    zone_id=info["zone_id"],
+                    zone_id=zone_id,
                     set_address=info["set_address"],
                     value_address=info["value_address"],
                     socket_manager=self._socket_manager,
+                    zone_name=self._zones.get(zone_id),
                 )
                 dimmers.append(dimmer)
 
@@ -342,6 +365,7 @@ class Hub:
                     zone_id=zone_id,
                     address=address,
                     socket_manager=self._socket_manager,
+                    zone_name=self._zones.get(zone_id),
                 )
             )
 

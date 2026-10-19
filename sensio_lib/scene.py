@@ -17,8 +17,9 @@ class Scene(Device):
         zone_id: str,
         address: int,
         socket_manager: SocketManager,
+        zone_name: str | None = None,
     ) -> None:
-        super().__init__(unique_id, name, zone_id, socket_manager)
+        super().__init__(unique_id, name, zone_id, socket_manager, zone_name=zone_name)
         self._address = address
 
     async def activate(self) -> None:
