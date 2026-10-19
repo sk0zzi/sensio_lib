@@ -1,7 +1,10 @@
 """Async socket manager for communicating with the Sensio controller."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
+from collections.abc import Callable
 
 from sensio_lib.const import COMMAND_POSTFIX, COMMAND_PREFIX
 from sensio_lib.exceptions import SensioCommandError, SensioConnectionError
@@ -22,6 +25,9 @@ class SocketManager:
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._lock = asyncio.Lock()
+        self._listener_task: asyncio.Task | None = None
+        self._start_byte = COMMAND_PREFIX.encode()
+        self._end_byte = COMMAND_POSTFIX.encode()
 
     @property
     def connected(self) -> bool:
@@ -39,6 +45,68 @@ class SocketManager:
             raise SensioConnectionError(
                 f"Failed to connect to {self._server_address}:{self._port}: {err}"
             ) from err
+
+    async def start_listener(self, callback: Callable[[str], None]) -> None:
+        """Start a background task that reads frames and invokes the callback.
+
+        The listener continuously reads \\x01...\\x02 frames from the hub
+        and calls ``callback(raw_content)`` for each one. It runs as an
+        asyncio Task and handles shutdown cleanly on cancellation or EOF.
+
+        Args:
+            callback: Called with the raw string content of each frame.
+        """
+        if self._listener_task is not None:
+            logger.warning("Listener already running, stopping existing one")
+            await self.stop_listener()
+
+        self._listener_task = asyncio.ensure_future(
+            self._listener_loop(callback)
+        )
+
+    async def stop_listener(self) -> None:
+        """Stop the background listener task."""
+        if self._listener_task is not None:
+            self._listener_task.cancel()
+            try:
+                await self._listener_task
+            except asyncio.CancelledError:
+                pass
+            self._listener_task = None
+
+    async def _listener_loop(self, callback: Callable[[str], None]) -> None:
+        """Internal loop that reads frames and dispatches to the callback."""
+        if not self._reader:
+            logger.error("Cannot start listener: not connected")
+            return
+
+        buf = b""
+        try:
+            while True:
+                data = await self._reader.read(4096)
+                if not data:
+                    logger.info("Hub connection closed (EOF)")
+                    break
+
+                buf += data
+                while self._start_byte in buf and self._end_byte in buf:
+                    start = buf.index(self._start_byte)
+                    # Discard any bytes before the start marker.
+                    buf = buf[start:]
+                    end = buf.index(self._end_byte)
+                    content = buf[1:end].decode(
+                        "utf-8", errors="replace"
+                    )
+                    buf = buf[end + 1:]
+                    try:
+                        callback(content)
+                    except Exception:
+                        logger.exception("Error in listener callback")
+        except asyncio.CancelledError:
+            logger.debug("Listener task cancelled")
+            raise
+        except OSError as err:
+            logger.error("Listener connection error: %s", err)
 
     async def send_command(self, command: str) -> None:
         """Send a command to the Sensio controller.
@@ -60,6 +128,7 @@ class SocketManager:
 
     async def close(self) -> None:
         """Close the socket connection."""
+        await self.stop_listener()
         if self._writer and not self._writer.is_closing():
             self._writer.close()
             try:
