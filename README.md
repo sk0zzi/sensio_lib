@@ -1,14 +1,20 @@
 # Sensio Library
 
+![AI: Assisted](https://img.shields.io/badge/AI-Assisted-blue)
+
 A minimal async library to control Sensio (EOPT Home) smart house systems. Designed for easy integration with Home Assistant.
 
-## Features (v1.2.0)
+## Features (v1.3.0)
 
-- **Unity and HA pilot** - Supports getting devices from both unity and ha-pilot. 
-- **Local control** — All device commands sent directly to your controller on the LAN
+- **Unity and HA pilot** — Supports getting devices from both `unity` and `ha-pilot`
+- **Local control & live state feedback** — Sends commands directly to your controller on the LAN and listens to its RSN event stream for real-time state updates (including changes from physical wall switches)
+- **Automatic reconnect** — Automatically reconnects with exponential backoff if the connection to the controller drops
+- **Hub validation** — Verifies hub identity (serial, firmware, MAC, product ID) upon connection
 - **Cloud API** — Fetch device configuration from the EOPT cloud (one-time setup)
-- **Lights** — Turn individual lights and room-level lights on/off
-- **Scenes** — Activate lighting scenes
+- **Lights** — Turn individual relay lights on/off with live state tracking
+- **Dimmers** — Set brightness (`0–100%`) and turn dimmers on/off (restoring previous brightness), with live brightness feedback
+- **Zones (Rooms)** — Resolves human-readable zone names and exposes `zone_name` on all devices
+- **Scenes** — Activate house-level lighting scenes
 
 ## Architecture
 
@@ -48,7 +54,7 @@ async with Hub("192.168.1.100") as hub:
 
 ## Device Support
 
-This library has been tested with a Sensio X1 controller. Testing is limited, so your experience may vary. Device support is also very limited to only scenes and lights. There is no reading of data back from the controller only sending of commands.
+This library has been tested with a Sensio X1 controller. Testing is limited, so your experience may vary.
 
 ## Requirements
 
@@ -63,8 +69,8 @@ Example script reads env params for sensitive data and does not store anything. 
 SENSIO_USERNAME="your user name / email" SENSIO_PASSWORD="your password" SENSIO_HUB_IP="your hub IP" python example.py
 ```
 
-You can also optionally specify `SENSIO_ENV` to target a different cloud environment (defaults to `unity`, can also be `pilot-ha`):
+You can also optionally specify `SENSIO_ENV` to target a different cloud environment (defaults to `unity`, can also be `ha-pilot`):
 
 ```bash
-SENSIO_ENV="pilot-ha" SENSIO_USERNAME="your user name / email" SENSIO_PASSWORD="your password" SENSIO_HUB_IP="your hub IP" python example.py
+SENSIO_ENV="ha-pilot" SENSIO_USERNAME="your user name / email" SENSIO_PASSWORD="your password" SENSIO_HUB_IP="your hub IP" python example.py
 ```
