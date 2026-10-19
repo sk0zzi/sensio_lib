@@ -24,6 +24,11 @@ SENSIO_HA_PILOT_PROJECTS_URL = 'https://ha-pilot.eopthome.no/api/v1/users/self/p
 COMMAND_PREFIX = '\x01'
 COMMAND_POSTFIX = '\x02'
 
+# RSN type codes (from hub protocol)
+RSN_TYPE_RELAY = 8
+RSN_TYPE_DIMMER = 21   # D_ device state (informational, not used for registry dispatch)
+RSN_TYPE_MEMORY = 23   # M_ memory values — used for dim_value address dispatch
+
 class SensioEnvironment(StrEnum):
     UNITY = "unity"
     HA_PILOT = "ha-pilot"
