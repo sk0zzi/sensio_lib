@@ -11,6 +11,9 @@ from sensio_lib.exceptions import SensioCommandError, SensioConnectionError
 
 logger = logging.getLogger(__name__)
 
+_RECONNECT_MIN_SECONDS = 5
+_RECONNECT_MAX_SECONDS = 300
+
 
 class SocketManager:
     """Manages the TCP socket connection to the Sensio controller.
@@ -46,22 +49,29 @@ class SocketManager:
                 f"Failed to connect to {self._server_address}:{self._port}: {err}"
             ) from err
 
-    async def start_listener(self, callback: Callable[[str], None]) -> None:
+    async def start_listener(
+        self,
+        callback: Callable[[str], None],
+        *,
+        auto_reconnect: bool = True,
+    ) -> None:
         """Start a background task that reads frames and invokes the callback.
 
         The listener continuously reads \\x01...\\x02 frames from the hub
-        and calls ``callback(raw_content)`` for each one. It runs as an
-        asyncio Task and handles shutdown cleanly on cancellation or EOF.
+        and calls ``callback(raw_content)`` for each one. When
+        ``auto_reconnect`` is True, a dropped connection is automatically
+        re-established with exponential backoff.
 
         Args:
             callback: Called with the raw string content of each frame.
+            auto_reconnect: Whether to automatically reconnect on EOF or error.
         """
         if self._listener_task is not None:
             logger.warning("Listener already running, stopping existing one")
             await self.stop_listener()
 
         self._listener_task = asyncio.ensure_future(
-            self._listener_loop(callback)
+            self._listener_loop(callback, auto_reconnect=auto_reconnect)
         )
 
     async def stop_listener(self) -> None:
@@ -74,39 +84,80 @@ class SocketManager:
                 pass
             self._listener_task = None
 
-    async def _listener_loop(self, callback: Callable[[str], None]) -> None:
+    async def _close_socket(self) -> None:
+        """Close the underlying stream writer if open."""
+        if self._writer and not self._writer.is_closing():
+            self._writer.close()
+            try:
+                await self._writer.wait_closed()
+            except OSError:
+                pass
+        self._reader = None
+        self._writer = None
+
+    async def _listener_loop(
+        self,
+        callback: Callable[[str], None],
+        *,
+        auto_reconnect: bool = True,
+    ) -> None:
         """Internal loop that reads frames and dispatches to the callback."""
         if not self._reader:
             logger.error("Cannot start listener: not connected")
             return
 
         buf = b""
+        backoff = _RECONNECT_MIN_SECONDS
+
         try:
             while True:
-                data = await self._reader.read(4096)
-                if not data:
-                    logger.info("Hub connection closed (EOF)")
-                    break
+                try:
+                    if self._reader is None:
+                        await self.connect()
+                        buf = b""
+                        backoff = _RECONNECT_MIN_SECONDS
+                        logger.info(
+                            "Reconnected to Sensio controller at %s:%d",
+                            self._server_address,
+                            self._port,
+                        )
 
-                buf += data
-                while self._start_byte in buf and self._end_byte in buf:
-                    start = buf.index(self._start_byte)
-                    # Discard any bytes before the start marker.
-                    buf = buf[start:]
-                    end = buf.index(self._end_byte)
-                    content = buf[1:end].decode(
-                        "utf-8", errors="replace"
+                    data = await self._reader.read(4096)
+                    if not data:
+                        if not auto_reconnect:
+                            logger.info("Hub connection closed (EOF)")
+                            break
+                        raise ConnectionResetError("Hub closed the connection (EOF)")
+
+                    buf += data
+                    while self._start_byte in buf and self._end_byte in buf:
+                        start = buf.index(self._start_byte)
+                        # Discard any bytes before the start marker.
+                        buf = buf[start:]
+                        end = buf.index(self._end_byte)
+                        content = buf[1:end].decode(
+                            "utf-8", errors="replace"
+                        )
+                        buf = buf[end + 1:]
+                        try:
+                            callback(content)
+                        except Exception:
+                            logger.exception("Error in listener callback")
+                except (OSError, SensioConnectionError) as err:
+                    if not auto_reconnect:
+                        logger.error("Listener connection error: %s", err)
+                        break
+                    logger.warning(
+                        "Lost connection to hub (%s); retrying in %ds",
+                        err,
+                        backoff,
                     )
-                    buf = buf[end + 1:]
-                    try:
-                        callback(content)
-                    except Exception:
-                        logger.exception("Error in listener callback")
+                    await self._close_socket()
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, _RECONNECT_MAX_SECONDS)
         except asyncio.CancelledError:
             logger.debug("Listener task cancelled")
             raise
-        except OSError as err:
-            logger.error("Listener connection error: %s", err)
 
     async def send_command(self, command: str) -> None:
         """Send a command to the Sensio controller.
@@ -129,11 +180,4 @@ class SocketManager:
     async def close(self) -> None:
         """Close the socket connection."""
         await self.stop_listener()
-        if self._writer and not self._writer.is_closing():
-            self._writer.close()
-            try:
-                await self._writer.wait_closed()
-            except OSError:
-                pass
-        self._reader = None
-        self._writer = None
+        await self._close_socket()
