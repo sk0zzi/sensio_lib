@@ -67,6 +67,11 @@ def sample_functions():
         {"address": 503, "subType": "house_night",    "name": "B_HouseNight",    "displayName": "House Night",    "zoneId": "z-house", "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
         {"address": 504, "subType": "house_vacation", "name": "B_HouseVacation", "displayName": "House Vacation", "zoneId": "z-house", "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
 
+        # --- Zone scene memory (defines human-readable zone names) ---
+        {"address": 801, "subType": "memLightRoomCurSc", "name": "M_StueCurSc",   "displayName": "Stue Light Scene",   "zoneId": "z-stue",   "subGroupId": 0, "type": 1, "properties": "", "displayOrder": -1},
+        {"address": 802, "subType": "memLightRoomCurSc", "name": "M_KontorCurSc", "displayName": "Kontor Light Scene", "zoneId": "z-kontor", "subGroupId": 0, "type": 1, "properties": "", "displayOrder": -1},
+        {"address": 803, "subType": "memLightRoomCurSc", "name": "M_HusCurSc",    "displayName": "Hus Light Scene",    "zoneId": "z-house",  "subGroupId": 0, "type": 1, "properties": "", "displayOrder": -1},
+
         # --- Non-light function (should be ignored) ---
         {"address": 900, "subType": "memHeatAway", "name": "M_HeatAway", "displayName": "Heat Away", "zoneId": "z-stue", "subGroupId": 0, "type": 1, "properties": "", "displayOrder": -1},
     ]}
@@ -90,8 +95,20 @@ class TestDeviceParsing:
         vindu_sor = [l for l in lights if l.unique_id == "27"]
         assert len(vindu_sor) == 1
         assert vindu_sor[0].name == "Vindu sør"
+        assert vindu_sor[0].zone_name == "Stue"
 
+    def test_parse_zones_and_device_zone_names(self, hub, sample_functions):
+        """memLightRoomCurSc entries should populate get_zones() and device.zone_name."""
+        hub._parse_devices(sample_functions)
 
+        assert hub.get_zones() == {
+            "z-stue": "Stue",
+            "z-kontor": "Kontor",
+            "z-house": "Hus",
+        }
+        dimmers = {d.unique_id: d for d in hub.get_dimmers()}
+        assert dimmers["55"].zone_name == "Stue"
+        assert dimmers["60"].zone_name == "Kontor"
 
     def test_parse_house_scenes(self, hub, sample_functions):
         """House-level scenes (house_in, house_away, etc.) should be parsed."""
@@ -135,6 +152,7 @@ class TestDeviceParsing:
         hub._parse_devices({"functions": []})
         assert hub.get_lights() == []
         assert hub.get_scenes() == []
+        assert hub.get_zones() == {}
 
     def test_parse_ignores_non_light_functions(self, hub):
         """Functions like heating, timers etc should be ignored."""

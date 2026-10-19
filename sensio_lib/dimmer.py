@@ -49,8 +49,9 @@ class Dimmer(Device):
         set_address: int,
         value_address: int,
         socket_manager: SocketManager,
+        zone_name: str | None = None,
     ) -> None:
-        super().__init__(unique_id, name, zone_id, socket_manager)
+        super().__init__(unique_id, name, zone_id, socket_manager, zone_name=zone_name)
         self._set_address = set_address
         self._value_address = value_address
         self._brightness: int | None = None

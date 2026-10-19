@@ -19,10 +19,12 @@ class Device:
         name: str,
         zone_id: str,
         socket_manager: SocketManager,
+        zone_name: str | None = None,
     ) -> None:
         self._unique_id = unique_id
         self._name = name
         self._zone_id = zone_id
+        self._zone_name = zone_name
         self._socket_manager = socket_manager
 
     @property
@@ -39,6 +41,11 @@ class Device:
     def zone_id(self) -> str:
         """Return the zone ID this device belongs to."""
         return self._zone_id
+
+    @property
+    def zone_name(self) -> str | None:
+        """Return the human-readable zone name, if known."""
+        return self._zone_name
 
     def update_from_rsn(self, message: RsnMessage) -> bool:
         """Update device state from an RSN message.
