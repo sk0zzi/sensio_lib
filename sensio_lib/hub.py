@@ -69,7 +69,9 @@ class Hub:
             self._hub_identity = None
             self._identity_ready = asyncio.Event()
             await self._socket_manager.connect()
-            await self._socket_manager.start_listener(self._handle_message)
+            await self._socket_manager.start_listener(
+                self._handle_message, auto_reconnect=False
+            )
 
             # Wait for the listener to process the first message (hub identity).
             try:
@@ -157,8 +159,8 @@ class Hub:
         message is expected to be the hub identity XML. All subsequent
         messages are parsed as RSN and dispatched to registered devices.
         """
-        # First message: parse as hub identity.
-        if self._hub_identity is None:
+        # First message (or first message after reconnect): parse as hub identity.
+        if self._hub_identity is None or raw.lstrip().startswith("<connect"):
             try:
                 self._hub_identity = parse_hub_identity(raw)
                 logger.debug("Parsed hub identity: serial=%s", self._hub_identity.serial)

@@ -23,7 +23,7 @@ def _make_start_listener_side_effect(*messages: str):
 
     The callback is called synchronously with each message before returning.
     """
-    async def side_effect(callback):
+    async def side_effect(callback, **kwargs):
         for msg in messages:
             callback(msg)
     return side_effect
@@ -508,3 +508,61 @@ class TestHubLifecycle:
         async with Hub("192.168.1.1") as hub:
             assert hub is not None
         # close() is called automatically by __aexit__
+
+
+class TestAutoReconnect:
+    """Tests for SocketManager auto-reconnect and Hub reconnect handling."""
+
+    @pytest.mark.asyncio
+    async def test_reconnects_after_eof_and_resumes_reading(self):
+        """When the hub closes the socket (EOF), SocketManager should reconnect."""
+        import asyncio
+        from sensio_lib.socket_manager import SocketManager
+
+        sm = SocketManager("192.168.1.1")
+        reader1 = AsyncMock()
+        reader1.read = AsyncMock(side_effect=[b"\x01RSN 1 A 8 1 1 0\x02", b""])
+        writer1 = MagicMock()
+        writer1.is_closing.return_value = False
+        writer1.wait_closed = AsyncMock()
+
+        reader2 = AsyncMock()
+        second_read_done = asyncio.Event()
+
+        async def reader2_read(_):
+            if not second_read_done.is_set():
+                second_read_done.set()
+                return b"\x01RSN 1 A 8 1 0 0\x02"
+            await asyncio.Event().wait()
+            return b""
+
+        reader2.read = reader2_read
+        writer2 = MagicMock()
+        writer2.is_closing.return_value = False
+        writer2.wait_closed = AsyncMock()
+
+        sm._reader, sm._writer = reader1, writer1
+        received: list[str] = []
+
+        async def fake_connect():
+            sm._reader, sm._writer = reader2, writer2
+
+        with patch.object(sm, "connect", side_effect=fake_connect) as mock_connect, \
+             patch("sensio_lib.socket_manager.asyncio.sleep", new_callable=AsyncMock):
+            await sm.start_listener(received.append, auto_reconnect=True)
+            await asyncio.wait_for(second_read_done.wait(), timeout=2.0)
+            await sm.close()
+
+        mock_connect.assert_called_once()
+        assert received == ["RSN 1 A 8 1 1 0", "RSN 1 A 8 1 0 0"]
+
+    def test_hub_handles_connect_xml_on_reconnect(self, hub, sample_functions):
+        """A <connect .../> frame received after initial connect updates identity cleanly."""
+        hub._parse_devices(sample_functions)
+        hub._handle_message(VALID_CONNECT_XML)
+        assert hub.hub_identity is not None
+        assert hub.hub_identity.serial == "AABBCCDDEEFF"
+
+        reconnected_xml = VALID_CONNECT_XML.replace("AABBCCDDEEFF", "112233445566")
+        hub._handle_message(reconnected_xml)
+        assert hub.hub_identity.serial == "112233445566"
