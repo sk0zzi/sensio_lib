@@ -54,6 +54,7 @@ class Dimmer(Device):
         self._set_address = set_address
         self._value_address = value_address
         self._brightness: int | None = None
+        self._last_brightness: int = 100
         self._state = DimmerState.UNKNOWN
 
     @property
@@ -67,8 +68,10 @@ class Dimmer(Device):
         return self._brightness
 
     @property
-    def is_on(self) -> bool:
-        """Return True if the dimmer is on (brightness > 0)."""
+    def is_on(self) -> bool | None:
+        """Return True if the dimmer is on, False if off, or None if unknown."""
+        if self._state == DimmerState.UNKNOWN:
+            return None
         return self._state == DimmerState.ON
 
     async def set_brightness(self, level: int) -> None:
@@ -81,6 +84,8 @@ class Dimmer(Device):
             level: Target brightness percentage (0–100).
         """
         level = max(0, min(100, level))
+        if level > 0:
+            self._last_brightness = level
         await self._socket_manager.send_command(
             f"set_value {self._value_address} {level}"
         )
@@ -91,10 +96,10 @@ class Dimmer(Device):
     async def turn_on(self) -> None:
         """Turn the dimmer on.
 
-        Restores to the last known brightness, or 100% if the current
-        brightness is unknown or zero.
+        Restores to the last known non-zero brightness, or 100% if no
+        non-zero brightness has been seen yet.
         """
-        level = self._brightness if self._brightness else 100
+        level = self._brightness if self._brightness else self._last_brightness
         await self.set_brightness(level)
 
     async def turn_off(self) -> None:
@@ -113,6 +118,8 @@ class Dimmer(Device):
             return False
 
         new_brightness = round(message.field_b)
+        if new_brightness > 0:
+            self._last_brightness = new_brightness
         new_state = DimmerState.ON if new_brightness > 0 else DimmerState.OFF
 
         if new_brightness == self._brightness and new_state == self._state:

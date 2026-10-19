@@ -47,8 +47,10 @@ class Light(Device):
         return self._state
 
     @property
-    def is_on(self) -> bool:
-        """Return True if the light is considered on."""
+    def is_on(self) -> bool | None:
+        """Return True if the light is on, False if off, or None if unknown."""
+        if self._state == LightState.UNKNOWN:
+            return None
         return self._state == LightState.ON
 
     async def turn_on(self) -> None:

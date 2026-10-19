@@ -48,9 +48,9 @@ class TestDimmerInitialState:
         d = _make_dimmer()
         assert d.brightness is None
 
-    def test_is_on_false_when_unknown(self):
+    def test_is_on_none_when_unknown(self):
         d = _make_dimmer()
-        assert d.is_on is False
+        assert d.is_on is None
 
     def test_repr_contains_name_and_state(self):
         d = _make_dimmer()
@@ -125,7 +125,7 @@ class TestTurnOnOff:
 
     @pytest.mark.asyncio
     async def test_turn_on_defaults_to_100_when_brightness_is_zero(self):
-        """If last known brightness was 0, turn_on should go to 100, not stay off."""
+        """If brightness is 0 and no prior non-zero level was seen, turn_on goes to 100."""
         sm = _make_socket_manager()
         d = _make_dimmer(value_address=2000, socket_manager=sm)
         d._brightness = 0
@@ -133,6 +133,19 @@ class TestTurnOnOff:
         await d.turn_on()
 
         assert sm.send_command.call_args_list[0].args[0] == "set_value 2000 100"
+
+    @pytest.mark.asyncio
+    async def test_turn_on_restores_previous_nonzero_brightness_after_turn_off(self):
+        """If dimmer was at 40% and then turned off (0%), turn_on restores 40%."""
+        sm = _make_socket_manager()
+        d = _make_dimmer(value_address=2000, socket_manager=sm)
+        d.update_from_rsn(_rsn(2000, type_code=23, field_a=0, field_b=40.0))
+        d.update_from_rsn(_rsn(2000, type_code=23, field_a=0, field_b=0.0))
+        assert d.brightness == 0
+
+        await d.turn_on()
+
+        assert sm.send_command.call_args_list[0].args[0] == "set_value 2000 40"
 
     @pytest.mark.asyncio
     async def test_turn_off_sends_zero(self):

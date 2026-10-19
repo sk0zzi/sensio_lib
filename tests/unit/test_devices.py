@@ -70,7 +70,7 @@ class TestLight:
     def test_initial_state_unknown(self, mock_socket):
         light = Light("1", "Test Light", "zone1", on_address=100, off_address=200, socket_manager=mock_socket)
         assert light.state == LightState.UNKNOWN
-        assert light.is_on is False
+        assert light.is_on is None
 
     def test_properties(self, mock_socket):
         light = Light("42", "Kitchen", "zone-abc", on_address=100, off_address=200, socket_manager=mock_socket)
