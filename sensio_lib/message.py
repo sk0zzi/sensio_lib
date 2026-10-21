@@ -30,10 +30,13 @@ class HubIdentity:
 
 @dataclass
 class RsnMessage:
-    """A single RSN status message from the hub.
+    """A single RSN/SSN status message from the hub.
 
     RSN messages report state changes for devices, sensors, timers, etc.
-    Format: RSN <address> <name> <type_code> <flag> <field_a> <field_b>
+    SSN messages have the same format and are returned in response to d_obj queries.
+    Standard format (7 tokens): RSN <address> <name> <type_code> <flag> <field_a> <field_b>
+    Thermostat format (9 tokens, type 7):
+        RSN <address> <name> 7 <flag> <field_a> <field_b> <field_c> <extra>
     """
 
     address: int
@@ -42,6 +45,7 @@ class RsnMessage:
     flag: int
     field_a: float
     field_b: float
+    field_c: float = 0.0
 
 
 def parse_hub_identity(raw: str) -> HubIdentity:
@@ -84,24 +88,29 @@ def parse_hub_identity(raw: str) -> HubIdentity:
 
 
 def parse_rsn_message(raw: str) -> RsnMessage | None:
-    """Parse an RSN status message from the hub.
+    """Parse an RSN or SSN status message from the hub.
 
-    The RSN format is fixed: ``RSN <address> <name> <type> <flag> <a> <b>``
-    (7 space-separated tokens). Any other message type returns None.
+    Standard format (7 tokens): ``RSN <address> <name> <type> <flag> <a> <b>``
+    Thermostat format (9 tokens, type 7):
+        ``RSN <address> <name> 7 <flag> <is_heating> <target_temp> <current_temp> <extra>``
+    Any other message type returns None.
 
     Args:
         raw: The raw string content (framing already stripped).
 
     Returns:
-        An RsnMessage if the string is a valid RSN line, or None for
+        An RsnMessage if the string is a valid RSN/SSN line, or None for
         any other message type (PANEL_BRIGHTNESS, end, x_bm_st, etc.).
         Returning None allows the caller to silently skip non-RSN messages.
     """
     parts = raw.strip().split()
-    if len(parts) != 7 or parts[0] != "RSN":
+    if len(parts) not in (7, 9) or parts[0] not in ("RSN", "SSN"):
         return None
 
     try:
+        field_c = float(parts[7]) if len(parts) == 9 else 0.0
+        if len(parts) == 9:
+            float(parts[8])  # Validate trailing float token
         return RsnMessage(
             address=int(parts[1]),
             name=parts[2],
@@ -109,6 +118,7 @@ def parse_rsn_message(raw: str) -> RsnMessage | None:
             flag=int(parts[4]),
             field_a=float(parts[5]),
             field_b=float(parts[6]),
+            field_c=field_c,
         )
     except (ValueError, IndexError):
         return None

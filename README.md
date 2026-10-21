@@ -4,7 +4,7 @@
 
 A minimal async library to control Sensio (EOPT Home) smart house systems. Designed for easy integration with Home Assistant.
 
-## Features (v1.3.0)
+## Features (v1.4.0)
 
 - **Unity and HA pilot** — Supports getting devices from both `unity` and `ha-pilot`
 - **Local control & live state feedback** — Sends commands directly to your controller on the LAN and listens to its RSN event stream for real-time state updates (including changes from physical wall switches)
@@ -13,6 +13,7 @@ A minimal async library to control Sensio (EOPT Home) smart house systems. Desig
 - **Cloud API** — Fetch device configuration from the EOPT cloud (one-time setup)
 - **Lights** — Turn individual relay lights on/off with live state tracking
 - **Dimmers** — Set brightness (`0–100%`) and turn dimmers on/off (restoring previous brightness), with live brightness feedback
+- **Thermostats (Heated Floors)** — Read current/target temperatures and active heating status, and set target temperatures (`0.5°C` precision)
 - **Zones (Rooms)** — Resolves human-readable zone names and exposes `zone_name` on all devices
 - **Scenes** — Activate house-level lighting scenes
 

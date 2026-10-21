@@ -13,6 +13,7 @@ from sensio_lib.light import Light, LightState
 from sensio_lib.message import HubIdentity
 from sensio_lib.scene import Scene
 from sensio_lib.sensio_api import SensioApi
+from sensio_lib.thermostat import Thermostat, ThermostatState
 from sensio_lib.const import SensioEnvironment
 
 __all__ = [
@@ -30,4 +31,6 @@ __all__ = [
     "SensioCommandError",
     "SensioConnectionError",
     "SensioException",
+    "Thermostat",
+    "ThermostatState",
 ]

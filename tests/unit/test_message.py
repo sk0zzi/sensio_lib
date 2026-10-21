@@ -135,3 +135,32 @@ class TestParseRsnMessage:
 
         assert msg is not None
         assert msg.address == 41302
+
+    def test_valid_thermostat_type7_rsn_message(self):
+        """9-token RSN type 7 thermostat message should parse target and current temp."""
+        msg = parse_rsn_message("RSN 19885 TH_Soverom2028 7 1 1 21.000 19.600 0.000")
+
+        assert msg is not None
+        assert msg.address == 19885
+        assert msg.name == "TH_Soverom2028"
+        assert msg.type_code == 7
+        assert msg.flag == 1
+        assert msg.field_a == 1.0
+        assert msg.field_b == 21.0
+        assert msg.field_c == 19.6
+
+    def test_valid_ssn_messages(self):
+        """SSN responses to d_obj queries (7-token and 9-token) should parse."""
+        msg7 = parse_rsn_message("SSN 12812 M_BadKjeller044_Cur 23 1 0 1.000")
+        assert msg7 is not None
+        assert msg7.address == 12812
+        assert msg7.type_code == 23
+        assert msg7.field_b == 1.0
+
+        msg9 = parse_rsn_message("SSN 11673 TH_BadKjeller044 7 1 0 22.00 28.80 0.00")
+        assert msg9 is not None
+        assert msg9.address == 11673
+        assert msg9.type_code == 7
+        assert msg9.field_a == 0.0
+        assert msg9.field_b == 22.0
+        assert msg9.field_c == 28.8

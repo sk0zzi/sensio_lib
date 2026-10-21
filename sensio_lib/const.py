@@ -25,9 +25,10 @@ COMMAND_PREFIX = '\x01'
 COMMAND_POSTFIX = '\x02'
 
 # RSN type codes (from hub protocol)
+RSN_TYPE_THERMOSTAT = 7
 RSN_TYPE_RELAY = 8
 RSN_TYPE_DIMMER = 21   # D_ device state (informational, not used for registry dispatch)
-RSN_TYPE_MEMORY = 23   # M_ memory values — used for dim_value address dispatch
+RSN_TYPE_MEMORY = 23   # M_ memory values — used for dim_value and therm_cur address dispatch
 
 class SensioEnvironment(StrEnum):
     UNITY = "unity"
