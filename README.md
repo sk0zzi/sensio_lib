@@ -4,7 +4,7 @@
 
 A minimal async library to control Sensio (EOPT Home) smart house systems. Designed for easy integration with Home Assistant.
 
-## Features (v1.3.0)
+## Features (v1.4.0)
 
 - **Unity and HA pilot** — Supports getting devices from both `unity` and `ha-pilot`
 - **Local control & live state feedback** — Sends commands directly to your controller on the LAN and listens to its RSN event stream for real-time state updates (including changes from physical wall switches)
