@@ -12,6 +12,7 @@ from sensio_lib.light import Light
 from sensio_lib.message import HubIdentity, parse_hub_identity, parse_rsn_message
 from sensio_lib.scene import Scene
 from sensio_lib.socket_manager import SocketManager
+from sensio_lib.thermostat import Thermostat
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +35,11 @@ class Hub:
         self._zones: dict[str, str] = {}
         self._lights: list[Light] = []
         self._dimmers: list[Dimmer] = []
+        self._thermostats: list[Thermostat] = []
         self._scenes: list[Scene] = []
-        self._device_registry: dict[int, Light | Dimmer] = {}
+        self._device_registry: dict[int, Light | Dimmer | Thermostat] = {}
         self._hub_identity: HubIdentity | None = None
-        self._state_callback: Callable[[Light | Dimmer], None] | None = None
+        self._state_callback: Callable[[Light | Dimmer | Thermostat], None] | None = None
         self._identity_ready: asyncio.Event | None = None
 
     @property
@@ -45,7 +47,9 @@ class Hub:
         """Return the hub identity read on connect, or None."""
         return self._hub_identity
 
-    def set_state_callback(self, callback: Callable[[Light | Dimmer], None]) -> None:
+    def set_state_callback(
+        self, callback: Callable[[Light | Dimmer | Thermostat], None]
+    ) -> None:
         """Set the callback invoked when any registered device's state changes.
 
         Home Assistant uses this to trigger entity state refreshes.
@@ -128,13 +132,24 @@ class Hub:
             self._hub_identity.serial,
             self._hub_identity.firmware,
         )
+        unique_devices = set(self._device_registry.values())
         logger.info(
-            "Device registry: %d relay lights, %d dimmers with RSN state tracking",
-            sum(1 for d in self._device_registry.values() if isinstance(d, Light)),
-            sum(1 for d in self._device_registry.values() if isinstance(d, Dimmer)),
+            "Device registry: %d relay lights, %d dimmers, %d thermostats with RSN state tracking",
+            sum(1 for d in unique_devices if isinstance(d, Light)),
+            sum(1 for d in unique_devices if isinstance(d, Dimmer)),
+            sum(1 for d in unique_devices if isinstance(d, Thermostat)),
         )
         for addr, device in self._device_registry.items():
             logger.info("  %s addr=%d -> %s", type(device).__name__, addr, device.name)
+
+        for thermostat in self._thermostats:
+            try:
+                await thermostat.query_state()
+            except SensioConnectionError:
+                logger.debug(
+                    "Skipping initial state query for %s (socket not connected)",
+                    thermostat.name,
+                )
 
     def get_zones(self) -> dict[str, str]:
         """Return all discovered zones as a mapping of zone_id to zone_name."""
@@ -147,6 +162,10 @@ class Hub:
     def get_dimmers(self) -> list[Dimmer]:
         """Return all discovered dimmers."""
         return list(self._dimmers)
+
+    def get_thermostats(self) -> list[Thermostat]:
+        """Return all discovered thermostats."""
+        return list(self._thermostats)
 
     def get_scenes(self) -> list[Scene]:
         """Return all discovered scenes."""
@@ -203,17 +222,18 @@ class Hub:
             logger.debug("RSN matched %s but state unchanged", device.name)
 
     def _parse_devices(self, functions_data: dict) -> None:
-        """Parse the functions JSON into Light, Dimmer, and Scene objects."""
+        """Parse the functions JSON into Light, Dimmer, Thermostat, and Scene objects."""
         functions = functions_data.get("functions", [])
 
         self._zones = self._parse_zones(functions)
         self._lights = self._parse_lights(functions)
         self._dimmers = self._parse_dimmers(functions)
+        self._thermostats = self._parse_thermostats(functions)
         self._scenes = self._parse_scenes(functions)
 
     @staticmethod
     def _parse_zones(functions: list[dict]) -> dict[str, str]:
-        """Parse zone names from memLightRoomCurSc entries."""
+        """Parse zone names from memLightRoomCurSc, HeatMode, and Thermostat entries."""
         zones: dict[str, str] = {}
         for func in functions:
             if func.get("subType") != "memLightRoomCurSc":
@@ -222,6 +242,19 @@ class Hub:
             display_name = func.get("displayName") or ""
             if zone_id and display_name:
                 zones[zone_id] = display_name.removesuffix(" Light Scene").strip()
+
+        # Fallback for heating-only zones that have no memLightRoomCurSc.
+        for func in functions:
+            sub_type = func.get("subType")
+            zone_id = func.get("zoneId")
+            display_name = func.get("displayName") or ""
+            if not zone_id or not display_name or zone_id in zones:
+                continue
+            if sub_type == "HeatMode":
+                zones[zone_id] = display_name.removesuffix(" Zone Heat Mode").strip()
+            elif sub_type == "Thermostat":
+                zones[zone_id] = display_name.removesuffix(" Thermostat").strip()
+
         return zones
 
     def _parse_lights(self, functions: list[dict]) -> list[Light]:
@@ -339,6 +372,101 @@ class Hub:
                 self._device_registry[info["value_address"]] = dimmer
 
         return dimmers
+
+    @staticmethod
+    def _parse_temp_bounds(properties: str) -> tuple[float, float]:
+        """Parse 'min|max' temperature bounds from Thermostat properties string."""
+        if properties and "|" in properties:
+            parts = properties.split("|", 1)
+            try:
+                return float(parts[0]), float(parts[1])
+            except ValueError:
+                pass
+        return 5.0, 35.0
+
+    def _parse_thermostats(self, functions: list[dict]) -> list[Thermostat]:
+        """Parse heated floor thermostats from functions data.
+
+        Groups heating functions by zoneId and collects Thermostat (TH_),
+        ThermSc (M_<Name>_Sc), ThermCur (M_<Name>_Cur), SetHeat (B_<Name>_Set),
+        and HeatRelay (R_<Name>) addresses.
+        """
+        groups: dict[str, dict] = {}
+        thermostat_subtypes = {
+            "Thermostat",
+            "ThermSc",
+            "ThermCur",
+            "SetHeat",
+            "HeatRelay",
+        }
+
+        for func in functions:
+            sub_type = func.get("subType")
+            if sub_type not in thermostat_subtypes:
+                continue
+
+            zone_id = func.get("zoneId")
+            if not zone_id:
+                continue
+
+            if zone_id not in groups:
+                groups[zone_id] = {
+                    "name": None,
+                    "zone_id": zone_id,
+                    "thermostat_address": None,
+                    "therm_sc_address": None,
+                    "therm_cur_address": None,
+                    "set_heat_address": None,
+                    "relay_address": None,
+                    "min_temp": 5.0,
+                    "max_temp": 35.0,
+                }
+
+            if sub_type == "Thermostat":
+                groups[zone_id]["name"] = func.get("displayName")
+                groups[zone_id]["thermostat_address"] = func.get("address")
+                min_t, max_t = self._parse_temp_bounds(func.get("properties") or "")
+                groups[zone_id]["min_temp"] = min_t
+                groups[zone_id]["max_temp"] = max_t
+            elif sub_type == "ThermSc":
+                groups[zone_id]["therm_sc_address"] = func.get("address")
+            elif sub_type == "ThermCur":
+                groups[zone_id]["therm_cur_address"] = func.get("address")
+            elif sub_type == "SetHeat":
+                groups[zone_id]["set_heat_address"] = func.get("address")
+            elif sub_type == "HeatRelay":
+                groups[zone_id]["relay_address"] = func.get("address")
+
+        thermostats: list[Thermostat] = []
+        for zone_id, info in groups.items():
+            if (
+                info["thermostat_address"] is not None
+                and info["therm_sc_address"] is not None
+                and info["set_heat_address"] is not None
+            ):
+                thermostat = Thermostat(
+                    unique_id=str(info["thermostat_address"]),
+                    name=info["name"] or "Thermostat",
+                    zone_id=zone_id,
+                    thermostat_address=info["thermostat_address"],
+                    therm_sc_address=info["therm_sc_address"],
+                    set_heat_address=info["set_heat_address"],
+                    therm_cur_address=info["therm_cur_address"],
+                    relay_address=info["relay_address"],
+                    min_temp=info["min_temp"],
+                    max_temp=info["max_temp"],
+                    socket_manager=self._socket_manager,
+                    zone_name=self._zones.get(zone_id),
+                )
+                thermostats.append(thermostat)
+
+                self._device_registry[info["thermostat_address"]] = thermostat
+                if info["therm_cur_address"] is not None:
+                    self._device_registry[info["therm_cur_address"]] = thermostat
+                if info["relay_address"] is not None:
+                    self._device_registry[info["relay_address"]] = thermostat
+
+        return thermostats
     def _parse_scenes(self, functions: list[dict]) -> list[Scene]:
         """Parse house-level scene functions into Scene objects."""
         house_scene_sub_types = {

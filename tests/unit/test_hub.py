@@ -9,6 +9,7 @@ from sensio_lib.dimmer import Dimmer, DimmerState
 from sensio_lib.light import Light, LightState
 from sensio_lib.message import HubIdentity, RsnMessage
 from sensio_lib.scene import Scene
+from sensio_lib.thermostat import Thermostat, ThermostatState
 
 
 VALID_CONNECT_XML = (
@@ -72,6 +73,14 @@ def sample_functions():
         {"address": 802, "subType": "memLightRoomCurSc", "name": "M_KontorCurSc", "displayName": "Kontor Light Scene", "zoneId": "z-kontor", "subGroupId": 0, "type": 1, "properties": "", "displayOrder": -1},
         {"address": 803, "subType": "memLightRoomCurSc", "name": "M_HusCurSc",    "displayName": "Hus Light Scene",    "zoneId": "z-house",  "subGroupId": 0, "type": 1, "properties": "", "displayOrder": -1},
 
+        # --- Heated floor thermostat in heating-only zone (Utebod) ---
+        {"address": 28740, "subType": "Thermostat", "name": "TH_Utebod039",     "displayName": "Utebod Thermostat",        "zoneId": "z-utebod", "subGroupId": 0, "type": 8, "properties": "5|35", "displayOrder": -1},
+        {"address": 28943, "subType": "ThermSc",    "name": "M_Utebod039_Sc",   "displayName": "Utebod Temperature Scene", "zoneId": "z-utebod", "subGroupId": 0, "type": 2, "properties": "",     "displayOrder": -1},
+        {"address": 28895, "subType": "ThermCur",   "name": "M_Utebod039_Cur",  "displayName": "Utebod Temperature Scene", "zoneId": "z-utebod", "subGroupId": 0, "type": 1, "properties": "",     "displayOrder": -1},
+        {"address": 29653, "subType": "SetHeat",    "name": "B_Utebod039_Set",  "displayName": "Utebod Temperature Set",   "zoneId": "z-utebod", "subGroupId": 0, "type": 0, "properties": "",     "displayOrder": -1},
+        {"address": 31326, "subType": "HeatRelay",  "name": "R_Varmekabel040",  "displayName": "Utebod Temperature Relay", "zoneId": "z-utebod", "subGroupId": 0, "type": 7, "properties": "",     "displayOrder": -1},
+        {"address": 104572, "subType": "HeatMode",  "name": "M_UtebodHeatMode", "displayName": "Utebod Zone Heat Mode",    "zoneId": "z-utebod", "subGroupId": 0, "type": 1, "properties": "",     "displayOrder": -1},
+
         # --- Non-light function (should be ignored) ---
         {"address": 900, "subType": "memHeatAway", "name": "M_HeatAway", "displayName": "Heat Away", "zoneId": "z-stue", "subGroupId": 0, "type": 1, "properties": "", "displayOrder": -1},
     ]}
@@ -98,17 +107,21 @@ class TestDeviceParsing:
         assert vindu_sor[0].zone_name == "Stue"
 
     def test_parse_zones_and_device_zone_names(self, hub, sample_functions):
-        """memLightRoomCurSc entries should populate get_zones() and device.zone_name."""
+        """memLightRoomCurSc and HeatMode entries should populate get_zones() and device.zone_name."""
         hub._parse_devices(sample_functions)
 
         assert hub.get_zones() == {
             "z-stue": "Stue",
             "z-kontor": "Kontor",
             "z-house": "Hus",
+            "z-utebod": "Utebod",
         }
         dimmers = {d.unique_id: d for d in hub.get_dimmers()}
         assert dimmers["55"].zone_name == "Stue"
         assert dimmers["60"].zone_name == "Kontor"
+        thermostats = hub.get_thermostats()
+        assert len(thermostats) == 1
+        assert thermostats[0].zone_name == "Utebod"
 
     def test_parse_house_scenes(self, hub, sample_functions):
         """House-level scenes (house_in, house_away, etc.) should be parsed."""
@@ -259,6 +272,62 @@ class TestDimmerParsing:
         light_ids = {l.unique_id for l in hub.get_lights()}
         dimmer_ids = {d.unique_id for d in hub.get_dimmers()}
         assert light_ids.isdisjoint(dimmer_ids)
+
+
+class TestThermostatParsingAndDispatch:
+    """Tests for _parse_thermostats() and RSN/SSN state dispatch for thermostats."""
+
+    def test_parse_thermostats_creates_thermostat_objects(self, hub, sample_functions):
+        hub._parse_devices(sample_functions)
+        thermostats = hub.get_thermostats()
+
+        assert len(thermostats) == 1
+        t = thermostats[0]
+        assert isinstance(t, Thermostat)
+        assert t.unique_id == "28740"
+        assert t.name == "Utebod Thermostat"
+        assert t.zone_id == "z-utebod"
+        assert t.zone_name == "Utebod"
+        assert t.min_temp == 5.0
+        assert t.max_temp == 35.0
+
+    def test_thermostat_registered_at_all_state_addresses(self, hub, sample_functions):
+        hub._parse_devices(sample_functions)
+        for addr in (28740, 28895, 31326):
+            assert addr in hub._device_registry
+            assert isinstance(hub._device_registry[addr], Thermostat)
+
+    def test_rsn_type7_updates_thermostat_and_fires_callback(self, hub, sample_functions):
+        hub._parse_devices(sample_functions)
+        hub._hub_identity = HubIdentity(
+            serial="DUMMY", ip="10.0.0.1", mac="00", firmware="1.0", product_id="P1"
+        )
+        callback = MagicMock()
+        hub.set_state_callback(callback)
+
+        hub._handle_message("RSN 28740 TH_Utebod039 7 1 1 10.000 8.500 0.000")
+
+        t = hub.get_thermostats()[0]
+        assert t.state == ThermostatState.HEATING
+        assert t.is_heating is True
+        assert t.target_temperature == 10.0
+        assert t.current_temperature == 8.5
+        callback.assert_called_once_with(t)
+
+    def test_ssn_response_updates_thermostat(self, hub, sample_functions):
+        hub._parse_devices(sample_functions)
+        hub._hub_identity = HubIdentity(
+            serial="DUMMY", ip="10.0.0.1", mac="00", firmware="1.0", product_id="P1"
+        )
+
+        hub._handle_message("SSN 28895 M_Utebod039_Cur 23 1 0 2.000")
+        hub._handle_message("SSN 28740 TH_Utebod039 7 1 0 5.00 7.20 0.00")
+
+        t = hub.get_thermostats()[0]
+        assert t._active_mode_index == 2
+        assert t.state == ThermostatState.IDLE
+        assert t.target_temperature == 5.0
+        assert t.current_temperature == 7.2
 
 class TestMessageDispatch:
     """Tests for _handle_message() - the RSN dispatch logic."""

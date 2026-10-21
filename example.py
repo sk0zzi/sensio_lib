@@ -12,6 +12,7 @@ from sensio_lib import (
     SensioAuthenticationError,
     SensioConnectionError,
     SensioEnvironment,
+    Thermostat,
 )
 
 logging.basicConfig(
@@ -26,7 +27,11 @@ def on_state_change(device):
     logger.info("State changed: %s", device)
 
 
-def _list_devices(lights: list[Light], dimmers: list[Dimmer]) -> None:
+def _list_devices(
+    lights: list[Light],
+    dimmers: list[Dimmer],
+    thermostats: list[Thermostat],
+) -> None:
     print("\n--- Lights ---")
     for i, light in enumerate(lights):
         print(f"  [{i}] {light.name}  ({light.state.value})")
@@ -36,6 +41,21 @@ def _list_devices(lights: list[Light], dimmers: list[Dimmer]) -> None:
             f"{dimmer.brightness}%" if dimmer.brightness is not None else "unknown"
         )
         print(f"  [d{i}] {dimmer.name}  ({dimmer.state.value}, brightness={brightness})")
+    print("\n--- Thermostats ---")
+    for i, therm in enumerate(thermostats):
+        cur = (
+            f"{therm.current_temperature:.1f}°C"
+            if therm.current_temperature is not None
+            else "unknown"
+        )
+        tgt = (
+            f"{therm.target_temperature:.1f}°C"
+            if therm.target_temperature is not None
+            else "unknown"
+        )
+        print(
+            f"  [t{i}] {therm.name}  ({therm.state.value}, current={cur}, target={tgt})"
+        )
     print()
 
 
@@ -75,6 +95,36 @@ async def _control_dimmer(dimmer: Dimmer) -> None:
         await dimmer.set_brightness(level)
     elif action != "":
         logger.error("Invalid input: %r", action)
+
+
+async def _control_thermostat(thermostat: Thermostat) -> None:
+    cur = (
+        f"{thermostat.current_temperature:.1f}°C"
+        if thermostat.current_temperature is not None
+        else "unknown"
+    )
+    tgt = (
+        f"{thermostat.target_temperature:.1f}°C"
+        if thermostat.target_temperature is not None
+        else "unknown"
+    )
+    action = await asyncio.to_thread(
+        input,
+        f"  Selected: {thermostat.name} (state: {thermostat.state.value},"
+        f" current={cur}, target={tgt})\n"
+        f"  [{thermostat.min_temp:g}-{thermostat.max_temp:g}] Set temperature (0.5°C step)"
+        "  [Enter] Cancel\n  > ",
+    )
+    action = action.strip()
+    if action == "":
+        return
+    try:
+        temp = float(action)
+    except ValueError:
+        logger.error("Invalid input: %r", action)
+        return
+    logger.info("Setting %s to %.1f°C", thermostat.name, temp)
+    await thermostat.set_temperature(temp)
 
 
 async def main():
@@ -125,21 +175,23 @@ async def main():
 
             lights = hub.get_lights()
             dimmers = hub.get_dimmers()
+            thermostats = hub.get_thermostats()
             scenes = hub.get_scenes()
 
             logger.info(
-                "Discovered: %d lights, %d dimmers, %d scenes",
-                len(lights), len(dimmers), len(scenes),
+                "Discovered: %d lights, %d dimmers, %d thermostats, %d scenes",
+                len(lights), len(dimmers), len(thermostats), len(scenes),
             )
-            _list_devices(lights, dimmers)
+            _list_devices(lights, dimmers, thermostats)
 
             # Interactive control loop
-            # Lights: plain number  (0, 1, 2, ...)
-            # Dimmers: d-prefixed   (d0, d1, d2, ...)
+            # Lights: plain number      (0, 1, 2, ...)
+            # Dimmers: d-prefixed       (d0, d1, d2, ...)
+            # Thermostats: t-prefixed   (t0, t1, t2, ...)
             while True:
                 choice = await asyncio.to_thread(
                     input,
-                    "Select device:  [0-N] light  [d0-dN] dimmer"
+                    "Select device:  [0-N] light  [d0-dN] dimmer  [t0-tN] thermostat"
                     "  [l] list  [q] quit\n> ",
                 )
                 choice = choice.strip().lower()
@@ -148,7 +200,7 @@ async def main():
                     break
 
                 if choice == "l":
-                    _list_devices(lights, dimmers)
+                    _list_devices(lights, dimmers, thermostats)
                     continue
 
                 if choice.startswith("d") and choice[1:].isdigit():
@@ -157,6 +209,16 @@ async def main():
                         logger.error("No dimmer at index %d (have %d)", idx, len(dimmers))
                         continue
                     await _control_dimmer(dimmers[idx])
+                    continue
+
+                if choice.startswith("t") and choice[1:].isdigit():
+                    idx = int(choice[1:])
+                    if idx >= len(thermostats):
+                        logger.error(
+                            "No thermostat at index %d (have %d)", idx, len(thermostats)
+                        )
+                        continue
+                    await _control_thermostat(thermostats[idx])
                     continue
 
                 if choice.isdigit():
