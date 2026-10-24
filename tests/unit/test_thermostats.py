@@ -25,6 +25,7 @@ def _make_thermostat(**kwargs) -> Thermostat:
         "set_heat_address": 13701,
         "therm_cur_address": 12812,
         "relay_address": 15680,
+        "error_mode_address": 13014,
         "min_temp": 5.0,
         "max_temp": 35.0,
         "socket_manager": _make_socket_manager(),
@@ -57,6 +58,7 @@ class TestThermostatInitialState:
         t = _make_thermostat()
         assert t.state == ThermostatState.UNKNOWN
         assert t.is_heating is None
+        assert t.in_error_mode is False
 
     def test_initial_temperatures_are_none(self):
         t = _make_thermostat()
@@ -153,27 +155,30 @@ class TestSetTemperature:
 
 class TestQueryState:
     @pytest.mark.asyncio
-    async def test_queries_therm_cur_and_thermostat_addresses(self):
+    async def test_queries_therm_cur_error_mode_and_thermostat_addresses(self):
         sm = _make_socket_manager()
         t = _make_thermostat(
             thermostat_address=11673,
             therm_cur_address=12812,
+            error_mode_address=13014,
             socket_manager=sm,
         )
 
         await t.query_state()
 
         calls = sm.send_command.call_args_list
-        assert len(calls) == 2
+        assert len(calls) == 3
         assert calls[0].args[0] == "d_obj 12812"
-        assert calls[1].args[0] == "d_obj 11673"
+        assert calls[1].args[0] == "d_obj 13014"
+        assert calls[2].args[0] == "d_obj 11673"
 
     @pytest.mark.asyncio
-    async def test_queries_only_thermostat_when_therm_cur_is_none(self):
+    async def test_queries_only_thermostat_when_optional_addresses_are_none(self):
         sm = _make_socket_manager()
         t = _make_thermostat(
             thermostat_address=11673,
             therm_cur_address=None,
+            error_mode_address=None,
             socket_manager=sm,
         )
 
@@ -245,3 +250,35 @@ class TestUpdateFromRsn:
         assert "19.2°C" in r
         assert "21.5°C" in r
         assert "heating" in r
+
+    def test_error_mode_hides_current_temperature_and_restores_when_cleared(self):
+        t = _make_thermostat(error_mode_address=13014)
+        t.update_from_rsn(
+            _rsn(11673, type_code=7, field_a=0.0, field_b=25.0, field_c=27.5)
+        )
+        assert t.current_temperature == 27.5
+        assert t.in_error_mode is False
+
+        # Enter error mode -> current_temperature becomes None
+        changed = t.update_from_rsn(
+            _rsn(13014, type_code=23, field_a=0.0, field_b=1.0)
+        )
+        assert changed is True
+        assert t.in_error_mode is True
+        assert t.current_temperature is None
+        assert t.target_temperature == 25.0
+        assert "error_mode=True" in repr(t)
+
+        # Duplicate error mode message returns False
+        assert (
+            t.update_from_rsn(_rsn(13014, type_code=23, field_a=0.0, field_b=1.0))
+            is False
+        )
+
+        # Clear error mode -> current_temperature restored
+        changed = t.update_from_rsn(
+            _rsn(13014, type_code=23, field_a=0.0, field_b=0.0)
+        )
+        assert changed is True
+        assert t.in_error_mode is False
+        assert t.current_temperature == 27.5

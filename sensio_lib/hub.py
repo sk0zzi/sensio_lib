@@ -389,7 +389,7 @@ class Hub:
 
         Groups heating functions by zoneId and collects Thermostat (TH_),
         ThermSc (M_<Name>_Sc), ThermCur (M_<Name>_Cur), SetHeat (B_<Name>_Set),
-        and HeatRelay (R_<Name>) addresses.
+        HeatRelay (R_<Name>), and ErrorMode (M_<Name>_Error) addresses.
         """
         groups: dict[str, dict] = {}
         thermostat_subtypes = {
@@ -398,6 +398,7 @@ class Hub:
             "ThermCur",
             "SetHeat",
             "HeatRelay",
+            "ErrorMode",
         }
 
         for func in functions:
@@ -418,6 +419,7 @@ class Hub:
                     "therm_cur_address": None,
                     "set_heat_address": None,
                     "relay_address": None,
+                    "error_mode_address": None,
                     "min_temp": 5.0,
                     "max_temp": 35.0,
                 }
@@ -436,6 +438,8 @@ class Hub:
                 groups[zone_id]["set_heat_address"] = func.get("address")
             elif sub_type == "HeatRelay":
                 groups[zone_id]["relay_address"] = func.get("address")
+            elif sub_type == "ErrorMode":
+                groups[zone_id]["error_mode_address"] = func.get("address")
 
         thermostats: list[Thermostat] = []
         for zone_id, info in groups.items():
@@ -453,6 +457,7 @@ class Hub:
                     set_heat_address=info["set_heat_address"],
                     therm_cur_address=info["therm_cur_address"],
                     relay_address=info["relay_address"],
+                    error_mode_address=info["error_mode_address"],
                     min_temp=info["min_temp"],
                     max_temp=info["max_temp"],
                     socket_manager=self._socket_manager,
@@ -465,6 +470,8 @@ class Hub:
                     self._device_registry[info["therm_cur_address"]] = thermostat
                 if info["relay_address"] is not None:
                     self._device_registry[info["relay_address"]] = thermostat
+                if info["error_mode_address"] is not None:
+                    self._device_registry[info["error_mode_address"]] = thermostat
 
         return thermostats
     def _parse_scenes(self, functions: list[dict]) -> list[Scene]:
