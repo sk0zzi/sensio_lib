@@ -79,6 +79,7 @@ def sample_functions():
         {"address": 28895, "subType": "ThermCur",   "name": "M_Utebod039_Cur",  "displayName": "Utebod Temperature Scene", "zoneId": "z-utebod", "subGroupId": 0, "type": 1, "properties": "",     "displayOrder": -1},
         {"address": 29653, "subType": "SetHeat",    "name": "B_Utebod039_Set",  "displayName": "Utebod Temperature Set",   "zoneId": "z-utebod", "subGroupId": 0, "type": 0, "properties": "",     "displayOrder": -1},
         {"address": 31326, "subType": "HeatRelay",  "name": "R_Varmekabel040",  "displayName": "Utebod Temperature Relay", "zoneId": "z-utebod", "subGroupId": 0, "type": 7, "properties": "",     "displayOrder": -1},
+        {"address": 29119, "subType": "ErrorMode",  "name": "M_Utebod039_Error", "displayName": "Utebod Temperature Error Mode", "zoneId": "z-utebod", "subGroupId": 0, "type": 1, "properties": "", "displayOrder": -1},
         {"address": 104572, "subType": "HeatMode",  "name": "M_UtebodHeatMode", "displayName": "Utebod Zone Heat Mode",    "zoneId": "z-utebod", "subGroupId": 0, "type": 1, "properties": "",     "displayOrder": -1},
 
         # --- Non-light function (should be ignored) ---
@@ -293,9 +294,27 @@ class TestThermostatParsingAndDispatch:
 
     def test_thermostat_registered_at_all_state_addresses(self, hub, sample_functions):
         hub._parse_devices(sample_functions)
-        for addr in (28740, 28895, 31326):
+        for addr in (28740, 28895, 29119, 31326):
             assert addr in hub._device_registry
             assert isinstance(hub._device_registry[addr], Thermostat)
+
+    def test_rsn_error_mode_updates_thermostat_and_fires_callback(self, hub, sample_functions):
+        hub._parse_devices(sample_functions)
+        hub._hub_identity = HubIdentity(
+            serial="DUMMY", ip="10.0.0.1", mac="00", firmware="1.0", product_id="P1"
+        )
+        callback = MagicMock()
+        hub.set_state_callback(callback)
+
+        hub._handle_message("SSN 28740 TH_Utebod039 7 1 0 5.00 16.50 0.00")
+        callback.reset_mock()
+
+        hub._handle_message("SSN 29119 M_Utebod039_Error 23 1 0 1.000")
+
+        t = hub.get_thermostats()[0]
+        assert t.in_error_mode is True
+        assert t.current_temperature is None
+        callback.assert_called_once_with(t)
 
     def test_rsn_type7_updates_thermostat_and_fires_callback(self, hub, sample_functions):
         hub._parse_devices(sample_functions)

@@ -13,6 +13,8 @@ State is tracked via:
       field_b = active mode index (0 = Comfort, 1 = Saving, 2 = Frost Protect)
   - RSN/SSN type 8 messages on the HeatRelay address (R_<Name>), where:
       field_a = relay state (1 = heating, 0 = idle)
+  - RSN/SSN type 23 messages on the ErrorMode address (M_<Name>_Error), where:
+      field_b = error/security mode state (1 = error/security mode, 0 = normal)
 """
 
 from __future__ import annotations
@@ -56,6 +58,7 @@ class Thermostat(Device):
         socket_manager: SocketManager,
         therm_cur_address: int | None = None,
         relay_address: int | None = None,
+        error_mode_address: int | None = None,
         min_temp: float = 5.0,
         max_temp: float = 35.0,
         zone_name: str | None = None,
@@ -66,6 +69,7 @@ class Thermostat(Device):
         self._set_heat_address = set_heat_address
         self._therm_cur_address = therm_cur_address
         self._relay_address = relay_address
+        self._error_mode_address = error_mode_address
         self._min_temp = min_temp
         self._max_temp = max_temp
 
@@ -73,6 +77,7 @@ class Thermostat(Device):
         self._current_temperature: float | None = None
         self._target_temperature: float | None = None
         self._active_mode_index: int = 0
+        self._in_error_mode: bool = False
 
     @property
     def state(self) -> ThermostatState:
@@ -87,8 +92,15 @@ class Thermostat(Device):
         return self._state == ThermostatState.HEATING
 
     @property
+    def in_error_mode(self) -> bool:
+        """Return True if the thermostat is in error/security mode."""
+        return self._in_error_mode
+
+    @property
     def current_temperature(self) -> float | None:
-        """Return the current measured temperature (°C), or None if unknown."""
+        """Return the current measured temperature (°C), or None if unknown or in error mode."""
+        if self._in_error_mode:
+            return None
         return self._current_temperature
 
     @property
@@ -128,10 +140,14 @@ class Thermostat(Device):
         )
 
     async def query_state(self) -> None:
-        """Query the hub for the current thermostat mode and temperature state."""
+        """Query the hub for the current thermostat mode, error state, and temperature state."""
         if self._therm_cur_address is not None:
             await self._socket_manager.send_command(
                 f"d_obj {self._therm_cur_address}"
+            )
+        if self._error_mode_address is not None:
+            await self._socket_manager.send_command(
+                f"d_obj {self._error_mode_address}"
             )
         await self._socket_manager.send_command(
             f"d_obj {self._thermostat_address}"
@@ -140,8 +156,8 @@ class Thermostat(Device):
     def update_from_rsn(self, message: RsnMessage) -> bool:
         """Update thermostat state from an RSN or SSN message.
 
-        Returns True if the state, current_temperature, or target_temperature
-        changed.
+        Returns True if the state, current_temperature, target_temperature,
+        or error mode changed.
         """
         if message.type_code == RSN_TYPE_THERMOSTAT:
             new_state = (
@@ -177,6 +193,18 @@ class Thermostat(Device):
 
         if (
             message.type_code == RSN_TYPE_MEMORY
+            and self._error_mode_address is not None
+            and message.address == self._error_mode_address
+        ):
+            new_error_mode = message.field_b > 0
+            if new_error_mode == self._in_error_mode:
+                return False
+            self._in_error_mode = new_error_mode
+            return True
+
+        if (
+            message.type_code == RSN_TYPE_MEMORY
+            and self._therm_cur_address is not None
             and message.address == self._therm_cur_address
         ):
             mode_idx = int(round(message.field_b))
@@ -187,9 +215,10 @@ class Thermostat(Device):
         return False
 
     def __repr__(self) -> str:
+        cur_temp = self.current_temperature
         cur_str = (
-            f"{self._current_temperature:.1f}°C"
-            if self._current_temperature is not None
+            f"{cur_temp:.1f}°C"
+            if cur_temp is not None
             else "unknown"
         )
         tgt_str = (
@@ -197,7 +226,8 @@ class Thermostat(Device):
             if self._target_temperature is not None
             else "unknown"
         )
+        err_str = ", error_mode=True" if self._in_error_mode else ""
         return (
             f"Thermostat(name={self._name!r}, state={self._state.value},"
-            f" current={cur_str}, target={tgt_str})"
+            f" current={cur_str}, target={tgt_str}{err_str})"
         )

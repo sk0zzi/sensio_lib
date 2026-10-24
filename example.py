@@ -53,8 +53,9 @@ def _list_devices(
             if therm.target_temperature is not None
             else "unknown"
         )
+        err = ", ERROR/SECURITY MODE" if therm.in_error_mode else ""
         print(
-            f"  [t{i}] {therm.name}  ({therm.state.value}, current={cur}, target={tgt})"
+            f"  [t{i}] {therm.name}  ({therm.state.value}, current={cur}, target={tgt}{err})"
         )
     print()
 
