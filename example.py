@@ -54,8 +54,13 @@ def _list_devices(
             else "unknown"
         )
         err = ", ERROR/SECURITY MODE" if therm.in_error_mode else ""
+        pwr = (
+            f", power={therm.last_hour_heating:.1f}W"
+            if therm.last_hour_heating is not None
+            else ""
+        )
         print(
-            f"  [t{i}] {therm.name}  ({therm.state.value}, current={cur}, target={tgt}{err})"
+            f"  [t{i}] {therm.name}  ({therm.state.value}, current={cur}, target={tgt}{pwr}{err})"
         )
     print()
 

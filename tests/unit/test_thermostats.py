@@ -26,6 +26,7 @@ def _make_thermostat(**kwargs) -> Thermostat:
         "therm_cur_address": 12812,
         "relay_address": 15680,
         "error_mode_address": 13014,
+        "last_hour_heating_address": 105631,
         "min_temp": 5.0,
         "max_temp": 35.0,
         "socket_manager": _make_socket_manager(),
@@ -59,6 +60,7 @@ class TestThermostatInitialState:
         assert t.state == ThermostatState.UNKNOWN
         assert t.is_heating is None
         assert t.in_error_mode is False
+        assert t.last_hour_heating is None
 
     def test_initial_temperatures_are_none(self):
         t = _make_thermostat()
@@ -155,22 +157,24 @@ class TestSetTemperature:
 
 class TestQueryState:
     @pytest.mark.asyncio
-    async def test_queries_therm_cur_error_mode_and_thermostat_addresses(self):
+    async def test_queries_therm_cur_error_mode_last_hour_heating_and_thermostat_addresses(self):
         sm = _make_socket_manager()
         t = _make_thermostat(
             thermostat_address=11673,
             therm_cur_address=12812,
             error_mode_address=13014,
+            last_hour_heating_address=105631,
             socket_manager=sm,
         )
 
         await t.query_state()
 
         calls = sm.send_command.call_args_list
-        assert len(calls) == 3
+        assert len(calls) == 4
         assert calls[0].args[0] == "d_obj 12812"
         assert calls[1].args[0] == "d_obj 13014"
-        assert calls[2].args[0] == "d_obj 11673"
+        assert calls[2].args[0] == "d_obj 105631"
+        assert calls[3].args[0] == "d_obj 11673"
 
     @pytest.mark.asyncio
     async def test_queries_only_thermostat_when_optional_addresses_are_none(self):
@@ -179,6 +183,7 @@ class TestQueryState:
             thermostat_address=11673,
             therm_cur_address=None,
             error_mode_address=None,
+            last_hour_heating_address=None,
             socket_manager=sm,
         )
 
@@ -282,3 +287,39 @@ class TestUpdateFromRsn:
         assert changed is True
         assert t.in_error_mode is False
         assert t.current_temperature == 27.5
+
+    def test_last_hour_heating_updates_and_returns_false_when_unchanged(self):
+        t = _make_thermostat(last_hour_heating_address=105631)
+        assert t.last_hour_heating is None
+
+        # Power arrives before heating state is known -> still None until state is known
+        changed = t.update_from_rsn(
+            _rsn(105631, type_code=23, field_a=0.0, field_b=542.8)
+        )
+        assert changed is True
+        assert t.last_hour_heating is None
+
+        # Thermostat enters HEATING state -> reports 542.8 W
+        t.update_from_rsn(_rsn(200, type_code=7, field_a=1.0, field_b=22.0, field_c=21.0))
+        assert t.last_hour_heating == 542.8
+
+        # Duplicate value returns False
+        assert (
+            t.update_from_rsn(_rsn(105631, type_code=23, field_a=0.0, field_b=542.8))
+            is False
+        )
+
+        # Thermostat enters IDLE state -> reports 0.0 W even if register holds 542.8
+        t.update_from_rsn(_rsn(200, type_code=7, field_a=0.0, field_b=22.0, field_c=22.0))
+        assert t.last_hour_heating == 0.0
+
+        # Thermostat enters HEATING again -> reports stored power
+        t.update_from_rsn(_rsn(200, type_code=7, field_a=1.0, field_b=22.0, field_c=21.0))
+        assert t.last_hour_heating == 542.8
+
+        # Updated to 0.0 returns True
+        changed = t.update_from_rsn(
+            _rsn(105631, type_code=23, field_a=0.0, field_b=0.0)
+        )
+        assert changed is True
+        assert t.last_hour_heating == 0.0
