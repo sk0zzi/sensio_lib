@@ -15,6 +15,8 @@ State is tracked via:
       field_a = relay state (1 = heating, 0 = idle)
   - RSN/SSN type 23 messages on the ErrorMode address (M_<Name>_Error), where:
       field_b = error/security mode state (1 = error/security mode, 0 = normal)
+  - RSN/SSN type 23 messages on the LastHourHeating address (M_<Name>LastHourHeating), where:
+      field_b = heating power usage in Watts (W)
 """
 
 from __future__ import annotations
@@ -59,6 +61,7 @@ class Thermostat(Device):
         therm_cur_address: int | None = None,
         relay_address: int | None = None,
         error_mode_address: int | None = None,
+        last_hour_heating_address: int | None = None,
         min_temp: float = 5.0,
         max_temp: float = 35.0,
         zone_name: str | None = None,
@@ -70,6 +73,7 @@ class Thermostat(Device):
         self._therm_cur_address = therm_cur_address
         self._relay_address = relay_address
         self._error_mode_address = error_mode_address
+        self._last_hour_heating_address = last_hour_heating_address
         self._min_temp = min_temp
         self._max_temp = max_temp
 
@@ -78,6 +82,7 @@ class Thermostat(Device):
         self._target_temperature: float | None = None
         self._active_mode_index: int = 0
         self._in_error_mode: bool = False
+        self._last_hour_heating: float | None = None
 
     @property
     def state(self) -> ThermostatState:
@@ -95,6 +100,15 @@ class Thermostat(Device):
     def in_error_mode(self) -> bool:
         """Return True if the thermostat is in error/security mode."""
         return self._in_error_mode
+
+    @property
+    def last_hour_heating(self) -> float | None:
+        """Return the active heating power usage in Watts (W), 0.0 when idle, or None if unknown."""
+        if self._state == ThermostatState.UNKNOWN:
+            return None
+        if self._state == ThermostatState.IDLE:
+            return 0.0
+        return self._last_hour_heating
 
     @property
     def current_temperature(self) -> float | None:
@@ -140,7 +154,7 @@ class Thermostat(Device):
         )
 
     async def query_state(self) -> None:
-        """Query the hub for the current thermostat mode, error state, and temperature state."""
+        """Query the hub for the current thermostat mode, error state, power usage, and temperature state."""
         if self._therm_cur_address is not None:
             await self._socket_manager.send_command(
                 f"d_obj {self._therm_cur_address}"
@@ -148,6 +162,10 @@ class Thermostat(Device):
         if self._error_mode_address is not None:
             await self._socket_manager.send_command(
                 f"d_obj {self._error_mode_address}"
+            )
+        if self._last_hour_heating_address is not None:
+            await self._socket_manager.send_command(
+                f"d_obj {self._last_hour_heating_address}"
             )
         await self._socket_manager.send_command(
             f"d_obj {self._thermostat_address}"
@@ -157,7 +175,7 @@ class Thermostat(Device):
         """Update thermostat state from an RSN or SSN message.
 
         Returns True if the state, current_temperature, target_temperature,
-        or error mode changed.
+        error mode, or last_hour_heating changed.
         """
         if message.type_code == RSN_TYPE_THERMOSTAT:
             new_state = (
@@ -200,6 +218,17 @@ class Thermostat(Device):
             if new_error_mode == self._in_error_mode:
                 return False
             self._in_error_mode = new_error_mode
+            return True
+
+        if (
+            message.type_code == RSN_TYPE_MEMORY
+            and self._last_hour_heating_address is not None
+            and message.address == self._last_hour_heating_address
+        ):
+            new_power = message.field_b
+            if new_power == self._last_hour_heating:
+                return False
+            self._last_hour_heating = new_power
             return True
 
         if (
