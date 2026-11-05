@@ -82,6 +82,30 @@ class TestLight:
         light = Light("1", "Test", "z", on_address=0, off_address=0, socket_manager=mock_socket)
         assert "Test" in repr(light)
 
+    @pytest.mark.asyncio
+    async def test_query_state_sends_d_obj_when_relay_address_present(self, mock_socket):
+        light = Light(
+            "1",
+            "Test Light",
+            "zone1",
+            on_address=100,
+            off_address=200,
+            relay_address=41302,
+            socket_manager=mock_socket,
+        )
+
+        await light.query_state()
+
+        mock_socket.send_command.assert_called_once_with("d_obj 41302")
+
+    @pytest.mark.asyncio
+    async def test_query_state_noop_when_relay_address_none(self, mock_socket):
+        light = Light("1", "Test Light", "zone1", on_address=100, off_address=200, socket_manager=mock_socket)
+
+        await light.query_state()
+
+        mock_socket.send_command.assert_not_called()
+
 
 class TestLightUpdateFromRsn:
     """Tests for Light.update_from_rsn()."""

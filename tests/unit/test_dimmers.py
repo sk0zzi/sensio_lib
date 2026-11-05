@@ -156,6 +156,15 @@ class TestTurnOnOff:
 
         assert sm.send_command.call_args_list[0].args[0] == "set_value 2000 0"
 
+    @pytest.mark.asyncio
+    async def test_query_state_sends_d_obj_for_value_address(self):
+        sm = _make_socket_manager()
+        d = _make_dimmer(value_address=2000, socket_manager=sm)
+
+        await d.query_state()
+
+        sm.send_command.assert_called_once_with("d_obj 2000")
+
 
 class TestUpdateFromRsn:
     def test_type23_updates_brightness_and_state(self):

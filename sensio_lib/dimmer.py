@@ -107,6 +107,10 @@ class Dimmer(Device):
         """Turn the dimmer off (set brightness to 0)."""
         await self.set_brightness(0)
 
+    async def query_state(self) -> None:
+        """Query the hub for the current dimmer brightness level."""
+        await self._socket_manager.send_command(f"d_obj {self._value_address}")
+
     def update_from_rsn(self, message: RsnMessage) -> bool:
         """Update dimmer state from an RSN message.
 

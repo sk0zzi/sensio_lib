@@ -47,6 +47,12 @@ class Device:
         """Return the human-readable zone name, if known."""
         return self._zone_name
 
+    async def query_state(self) -> None:
+        """Query the hub for the device's current state.
+
+        Subclasses with readable state override this to send ``d_obj`` commands.
+        """
+
     def update_from_rsn(self, message: RsnMessage) -> bool:
         """Update device state from an RSN message.
 
