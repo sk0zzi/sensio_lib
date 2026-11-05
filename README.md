@@ -4,7 +4,7 @@
 
 A minimal async library to control Sensio (EOPT Home) smart house systems. Designed for easy integration with Home Assistant.
 
-## Features (v1.6.0)
+## Features (v1.6.1)
 
 - **Unity and HA pilot** — Supports getting devices from both `unity` and `ha-pilot`
 - **Local control & live state feedback** — Sends commands directly to your controller on the LAN and listens to its RSN event stream for real-time state updates (including changes from physical wall switches)
@@ -23,6 +23,8 @@ The library separates cloud access from local control:
 
 - **`SensioApi`** — Authenticates with the Sensio cloud and fetches device data. Used once during setup; the result can be cached.
 - **`Hub`** — Connects to your local controller and sends commands. Works entirely offline using cached device data.
+
+This means that the cloud connection is not really needed other than for a initial connection. If the component using this library stores the information about the devices this library can be used 100% local. 
 
 ## Quick Start
 

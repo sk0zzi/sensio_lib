@@ -142,14 +142,10 @@ class Hub:
         for addr, device in self._device_registry.items():
             logger.info("  %s addr=%d -> %s", type(device).__name__, addr, device.name)
 
-        for thermostat in self._thermostats:
-            try:
-                await thermostat.query_state()
-            except SensioConnectionError:
-                logger.debug(
-                    "Skipping initial state query for %s (socket not connected)",
-                    thermostat.name,
-                )
+    async def query_state(self) -> None:
+        """Query the hub for the current state of all stateful devices."""
+        for device in (*self._lights, *self._dimmers, *self._thermostats):
+            await device.query_state()
 
     def get_zones(self) -> dict[str, str]:
         """Return all discovered zones as a mapping of zone_id to zone_name."""
@@ -310,6 +306,7 @@ class Hub:
                     on_address=info["on_address"],
                     off_address=info["off_address"],
                     socket_manager=self._socket_manager,
+                    relay_address=info["relay_address"],
                     zone_name=self._zones.get(zone_id),
                 )
                 lights.append(light)

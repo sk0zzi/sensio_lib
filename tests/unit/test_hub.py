@@ -366,6 +366,25 @@ class TestThermostatParsingAndDispatch:
         assert t.target_temperature == 5.0
         assert t.current_temperature == 7.2
 
+    @pytest.mark.asyncio
+    async def test_hub_query_state_queries_all_stateful_devices(self, hub, sample_functions):
+        hub._parse_devices(sample_functions)
+        hub._socket_manager.send_command = AsyncMock()
+
+        await hub.query_state()
+
+        sent_commands = [call.args[0] for call in hub._socket_manager.send_command.call_args_list]
+        assert sent_commands == [
+            "d_obj 103",
+            "d_obj 203",
+            "d_obj 301",
+            "d_obj 401",
+            "d_obj 28895",
+            "d_obj 29119",
+            "d_obj 104780",
+            "d_obj 28740",
+        ]
+
 class TestMessageDispatch:
     """Tests for _handle_message() - the RSN dispatch logic."""
 

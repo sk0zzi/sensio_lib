@@ -178,6 +178,7 @@ async def main():
                 )
 
             hub.set_state_callback(on_state_change)
+            await hub.query_state()
 
             lights = hub.get_lights()
             dimmers = hub.get_dimmers()

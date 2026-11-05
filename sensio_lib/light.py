@@ -35,11 +35,13 @@ class Light(Device):
         on_address: int,
         off_address: int,
         socket_manager: SocketManager,
+        relay_address: int | None = None,
         zone_name: str | None = None,
     ) -> None:
         super().__init__(unique_id, name, zone_id, socket_manager, zone_name=zone_name)
         self._on_address = on_address
         self._off_address = off_address
+        self._relay_address = relay_address
         self._state = LightState.UNKNOWN
 
     @property
@@ -67,6 +69,11 @@ class Light(Device):
         State will be updated when the hub sends the RSN response.
         """
         await self._socket_manager.send_command(f"new_state {self._off_address} 0")
+
+    async def query_state(self) -> None:
+        """Query the hub for the current relay state."""
+        if self._relay_address is not None:
+            await self._socket_manager.send_command(f"d_obj {self._relay_address}")
 
     def update_from_rsn(self, message: RsnMessage) -> bool:
         """Update light state from an RSN message.
