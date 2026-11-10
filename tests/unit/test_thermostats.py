@@ -61,6 +61,13 @@ class TestThermostatInitialState:
         assert t.is_heating is None
         assert t.in_error_mode is False
         assert t.last_hour_heating is None
+        assert t.has_humidity is False
+        assert t.humidity is None
+
+    def test_has_humidity_true_when_address_configured(self):
+        t = _make_thermostat(humidity_address=11567)
+        assert t.has_humidity is True
+        assert t.humidity is None
 
     def test_initial_temperatures_are_none(self):
         t = _make_thermostat()
@@ -175,6 +182,29 @@ class TestQueryState:
         assert calls[1].args[0] == "d_obj 13014"
         assert calls[2].args[0] == "d_obj 105631"
         assert calls[3].args[0] == "d_obj 11673"
+
+    @pytest.mark.asyncio
+    async def test_queries_humidity_address_when_configured(self):
+        sm = _make_socket_manager()
+        t = _make_thermostat(
+            thermostat_address=11673,
+            therm_cur_address=12812,
+            error_mode_address=13014,
+            last_hour_heating_address=105631,
+            humidity_address=11567,
+            socket_manager=sm,
+        )
+
+        await t.query_state()
+
+        calls = [c.args[0] for c in sm.send_command.call_args_list]
+        assert calls == [
+            "d_obj 12812",
+            "d_obj 13014",
+            "d_obj 105631",
+            "d_obj 11567",
+            "d_obj 11673",
+        ]
 
     @pytest.mark.asyncio
     async def test_queries_only_thermostat_when_optional_addresses_are_none(self):
@@ -323,3 +353,26 @@ class TestUpdateFromRsn:
         )
         assert changed is True
         assert t.last_hour_heating == 0.0
+
+    def test_type10_humidity_updates_and_returns_false_when_unchanged(self):
+        t = _make_thermostat(humidity_address=11567)
+        assert t.humidity is None
+
+        changed = t.update_from_rsn(
+            _rsn(11567, type_code=10, field_a=0.0, field_b=54.8)
+        )
+        assert changed is True
+        assert t.humidity == 54.8
+
+        # Duplicate value returns False
+        assert (
+            t.update_from_rsn(_rsn(11567, type_code=10, field_a=0.0, field_b=54.8))
+            is False
+        )
+
+        # Unrelated type 10 address is ignored
+        assert (
+            t.update_from_rsn(_rsn(99999, type_code=10, field_a=0.0, field_b=60.0))
+            is False
+        )
+        assert t.humidity == 54.8

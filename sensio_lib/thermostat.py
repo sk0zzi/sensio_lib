@@ -17,6 +17,8 @@ State is tracked via:
       field_b = error/security mode state (1 = error/security mode, 0 = normal)
   - RSN/SSN type 23 messages on the LastHourHeating address (M_<Name>LastHourHeating), where:
       field_b = heating power usage in Watts (W)
+  - RSN/SSN type 10 messages on the humidity sensor address (TS_<Name>), where:
+      field_b = relative humidity (%)
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from typing import TYPE_CHECKING
 from sensio_lib.const import (
     RSN_TYPE_MEMORY,
     RSN_TYPE_RELAY,
+    RSN_TYPE_SENSOR,
     RSN_TYPE_THERMOSTAT,
 )
 from sensio_lib.device import Device
@@ -62,6 +65,7 @@ class Thermostat(Device):
         relay_address: int | None = None,
         error_mode_address: int | None = None,
         last_hour_heating_address: int | None = None,
+        humidity_address: int | None = None,
         min_temp: float = 5.0,
         max_temp: float = 35.0,
         zone_name: str | None = None,
@@ -74,6 +78,7 @@ class Thermostat(Device):
         self._relay_address = relay_address
         self._error_mode_address = error_mode_address
         self._last_hour_heating_address = last_hour_heating_address
+        self._humidity_address = humidity_address
         self._min_temp = min_temp
         self._max_temp = max_temp
 
@@ -83,6 +88,7 @@ class Thermostat(Device):
         self._active_mode_index: int = 0
         self._in_error_mode: bool = False
         self._last_hour_heating: float | None = None
+        self._humidity: float | None = None
 
     @property
     def state(self) -> ThermostatState:
@@ -109,6 +115,16 @@ class Thermostat(Device):
         if self._state == ThermostatState.IDLE:
             return 0.0
         return self._last_hour_heating
+
+    @property
+    def has_humidity(self) -> bool:
+        """Return True if this thermostat has a humidity sensor configured."""
+        return self._humidity_address is not None
+
+    @property
+    def humidity(self) -> float | None:
+        """Return the current measured relative humidity (%), or None if unknown or unsupported."""
+        return self._humidity
 
     @property
     def current_temperature(self) -> float | None:
@@ -154,7 +170,7 @@ class Thermostat(Device):
         )
 
     async def query_state(self) -> None:
-        """Query the hub for the current thermostat mode, error state, power usage, and temperature state."""
+        """Query the hub for the current thermostat mode, error state, power usage, humidity, and temperature state."""
         if self._therm_cur_address is not None:
             await self._socket_manager.send_command(
                 f"d_obj {self._therm_cur_address}"
@@ -167,6 +183,10 @@ class Thermostat(Device):
             await self._socket_manager.send_command(
                 f"d_obj {self._last_hour_heating_address}"
             )
+        if self._humidity_address is not None:
+            await self._socket_manager.send_command(
+                f"d_obj {self._humidity_address}"
+            )
         await self._socket_manager.send_command(
             f"d_obj {self._thermostat_address}"
         )
@@ -175,7 +195,7 @@ class Thermostat(Device):
         """Update thermostat state from an RSN or SSN message.
 
         Returns True if the state, current_temperature, target_temperature,
-        error mode, or last_hour_heating changed.
+        error mode, last_hour_heating, or humidity changed.
         """
         if message.type_code == RSN_TYPE_THERMOSTAT:
             new_state = (
@@ -229,6 +249,17 @@ class Thermostat(Device):
             if new_power == self._last_hour_heating:
                 return False
             self._last_hour_heating = new_power
+            return True
+
+        if (
+            message.type_code == RSN_TYPE_SENSOR
+            and self._humidity_address is not None
+            and message.address == self._humidity_address
+        ):
+            new_humidity = message.field_b
+            if new_humidity == self._humidity:
+                return False
+            self._humidity = new_humidity
             return True
 
         if (
