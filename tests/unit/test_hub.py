@@ -81,6 +81,8 @@ def sample_functions():
         {"address": 31326, "subType": "HeatRelay",  "name": "R_Varmekabel040",  "displayName": "Utebod Temperature Relay", "zoneId": "z-utebod", "subGroupId": 0, "type": 7, "properties": "",     "displayOrder": -1},
         {"address": 29119, "subType": "ErrorMode",  "name": "M_Utebod039_Error", "displayName": "Utebod Temperature Error Mode", "zoneId": "z-utebod", "subGroupId": 0, "type": 1, "properties": "", "displayOrder": -1},
         {"address": 104780, "subType": "LastHourHeating", "name": "M_UtebodLastHourHeating", "displayName": "Utebod Usage Last Hour", "zoneId": "z-utebod", "subGroupId": 0, "type": 1, "properties": "", "displayOrder": -1},
+        {"address": 11567, "subType": "NotShow_analougeStatus", "name": "TS_VKbadkjellerInfoStyringFuk", "displayName": "VKbadkjellerInfo/Styring-Fuktighet", "zoneId": "z-utebod", "subGroupId": 59, "type": 1, "properties": "%", "displayOrder": 6},
+        {"address": 11514, "subType": "NotShow_analougeStatus", "name": "TS_VKbadkjellerInfoStyringGul", "displayName": "VKbadkjellerInfo/Styring-Gulv temp.", "zoneId": "z-utebod", "subGroupId": 61, "type": 1, "displayOrder": 2},
         {"address": 104572, "subType": "HeatMode",  "name": "M_UtebodHeatMode", "displayName": "Utebod Zone Heat Mode",    "zoneId": "z-utebod", "subGroupId": 0, "type": 1, "properties": "",     "displayOrder": -1},
 
         # --- Non-light function (should be ignored) ---
@@ -292,12 +294,47 @@ class TestThermostatParsingAndDispatch:
         assert t.zone_name == "Utebod"
         assert t.min_temp == 5.0
         assert t.max_temp == 35.0
+        assert t.has_humidity is True
+        assert t.humidity is None
 
     def test_thermostat_registered_at_all_state_addresses(self, hub, sample_functions):
         hub._parse_devices(sample_functions)
-        for addr in (28740, 28895, 29119, 31326, 104780):
+        for addr in (28740, 28895, 29119, 31326, 104780, 11567):
             assert addr in hub._device_registry
             assert isinstance(hub._device_registry[addr], Thermostat)
+        # Non-% NotShow_analougeStatus (11514) should not be registered
+        assert 11514 not in hub._device_registry
+
+    def test_rsn_humidity_updates_thermostat_and_fires_callback(self, hub, sample_functions):
+        hub._parse_devices(sample_functions)
+        hub._hub_identity = HubIdentity(
+            serial="DUMMY", ip="10.0.0.1", mac="00", firmware="1.0", product_id="P1"
+        )
+        callback = MagicMock()
+        hub.set_state_callback(callback)
+
+        hub._handle_message("SSN 11567 TS_VKbadkjellerInfoStyringFuk 10 1 0 54.80")
+
+        t = hub.get_thermostats()[0]
+        assert t.humidity == 54.8
+        callback.assert_called_once_with(t)
+
+    def test_parse_thermostat_supports_visible_analouge_status_humidity(self, hub):
+        data = {
+            "functions": [
+                {"address": 11673, "subType": "Thermostat", "name": "TH_Bad", "displayName": "Bad Thermostat", "zoneId": "z-bad", "subGroupId": 0, "type": 8, "properties": "5|35", "displayOrder": -1},
+                {"address": 12860, "subType": "ThermSc", "name": "M_Bad_Sc", "displayName": "Bad Scene", "zoneId": "z-bad", "subGroupId": 0, "type": 2, "properties": "", "displayOrder": -1},
+                {"address": 13701, "subType": "SetHeat", "name": "B_Bad_Set", "displayName": "Bad Set", "zoneId": "z-bad", "subGroupId": 0, "type": 0, "properties": "", "displayOrder": -1},
+                {"address": 11567, "subType": "analougeStatus", "name": "TS_BadFuk", "displayName": "Bad Fuktighet", "zoneId": "z-bad", "subGroupId": 59, "type": 1, "properties": "%", "displayOrder": 6},
+                {"address": 11514, "subType": "analougeStatus", "name": "TS_BadGulv", "displayName": "Bad Gulv", "zoneId": "z-bad", "subGroupId": 61, "type": 1, "properties": "", "displayOrder": 2},
+            ]
+        }
+        hub._parse_devices(data)
+        thermostats = hub.get_thermostats()
+        assert len(thermostats) == 1
+        assert thermostats[0].has_humidity is True
+        assert 11567 in hub._device_registry
+        assert 11514 not in hub._device_registry
 
     def test_rsn_last_hour_heating_updates_thermostat_and_fires_callback(self, hub, sample_functions):
         hub._parse_devices(sample_functions)
@@ -382,6 +419,7 @@ class TestThermostatParsingAndDispatch:
             "d_obj 28895",
             "d_obj 29119",
             "d_obj 104780",
+            "d_obj 11567",
             "d_obj 28740",
         ]
 

@@ -13,7 +13,7 @@ A minimal async library to control Sensio (EOPT Home) smart house systems. Desig
 - **Cloud API** — Fetch device configuration from the EOPT cloud (one-time setup)
 - **Lights** — Turn individual relay lights on/off with live state tracking
 - **Dimmers** — Set brightness (`0–100%`) and turn dimmers on/off (restoring previous brightness), with live brightness feedback
-- **Thermostats (Heated Floors)** — Read current/target temperatures, active heating status, power usage (`last_hour_heating`), and error/security mode state (`in_error_mode`), and set target temperatures (`0.5°C` precision)
+- **Thermostats (Heated Floors)** — Read current/target temperatures, active heating status, power usage (`last_hour_heating`), relative humidity (`humidity`), and error/security mode state (`in_error_mode`), and set target temperatures (`0.5°C` precision)
 - **Zones (Rooms)** — Resolves human-readable zone names and exposes `zone_name` on all devices
 - **Scenes** — Activate house-level lighting scenes
 

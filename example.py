@@ -59,8 +59,13 @@ def _list_devices(
             if therm.last_hour_heating is not None
             else ""
         )
+        hum = (
+            f", humidity={therm.humidity:.1f}%"
+            if therm.humidity is not None
+            else ""
+        )
         print(
-            f"  [t{i}] {therm.name}  ({therm.state.value}, current={cur}, target={tgt}{pwr}{err})"
+            f"  [t{i}] {therm.name}  ({therm.state.value}, current={cur}, target={tgt}{pwr}{hum}{err})"
         )
     print()
 

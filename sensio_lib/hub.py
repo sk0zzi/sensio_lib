@@ -386,8 +386,9 @@ class Hub:
 
         Groups heating functions by zoneId and collects Thermostat (TH_),
         ThermSc (M_<Name>_Sc), ThermCur (M_<Name>_Cur), SetHeat (B_<Name>_Set),
-        HeatRelay (R_<Name>), ErrorMode (M_<Name>_Error), and LastHourHeating
-        (M_<Name>LastHourHeating) addresses.
+        HeatRelay (R_<Name>), ErrorMode (M_<Name>_Error), LastHourHeating
+        (M_<Name>LastHourHeating), and humidity sensor (analougeStatus /
+        NotShow_analougeStatus with properties == "%") addresses.
         """
         groups: dict[str, dict] = {}
         thermostat_subtypes = {
@@ -398,11 +399,19 @@ class Hub:
             "HeatRelay",
             "ErrorMode",
             "LastHourHeating",
+            "analougeStatus",
+            "NotShow_analougeStatus",
         }
 
         for func in functions:
             sub_type = func.get("subType")
             if sub_type not in thermostat_subtypes:
+                continue
+
+            if (
+                sub_type in ("analougeStatus", "NotShow_analougeStatus")
+                and func.get("properties") != "%"
+            ):
                 continue
 
             zone_id = func.get("zoneId")
@@ -420,6 +429,7 @@ class Hub:
                     "relay_address": None,
                     "error_mode_address": None,
                     "last_hour_heating_address": None,
+                    "humidity_address": None,
                     "min_temp": 5.0,
                     "max_temp": 35.0,
                 }
@@ -442,6 +452,8 @@ class Hub:
                 groups[zone_id]["error_mode_address"] = func.get("address")
             elif sub_type == "LastHourHeating":
                 groups[zone_id]["last_hour_heating_address"] = func.get("address")
+            elif sub_type in ("analougeStatus", "NotShow_analougeStatus"):
+                groups[zone_id]["humidity_address"] = func.get("address")
 
         thermostats: list[Thermostat] = []
         for zone_id, info in groups.items():
@@ -461,6 +473,7 @@ class Hub:
                     relay_address=info["relay_address"],
                     error_mode_address=info["error_mode_address"],
                     last_hour_heating_address=info["last_hour_heating_address"],
+                    humidity_address=info["humidity_address"],
                     min_temp=info["min_temp"],
                     max_temp=info["max_temp"],
                     socket_manager=self._socket_manager,
@@ -477,6 +490,8 @@ class Hub:
                     self._device_registry[info["error_mode_address"]] = thermostat
                 if info["last_hour_heating_address"] is not None:
                     self._device_registry[info["last_hour_heating_address"]] = thermostat
+                if info["humidity_address"] is not None:
+                    self._device_registry[info["humidity_address"]] = thermostat
 
         return thermostats
     def _parse_scenes(self, functions: list[dict]) -> list[Scene]:
